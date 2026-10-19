@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="{% static 'styles/global.css' %}">
+  <link rel="stylesheet" href="{% static 'styles/global.css' %}?v={{ asset_version }}">
 </head>
 <body>
   {# Vue mounts the component named by the view (e.g. pages/SignIn.vue) here. #}
@@ -21,6 +21,6 @@
   {# Vue 3 + vue3-sfc-loader compile .vue files in the browser: no npm build step. #}
   <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader@0.9.5/dist/vue3-sfc-loader.js"></script>
-  <script src="{% static 'main.js' %}"></script>
+  <script src="{% static 'main.js' %}?v={{ asset_version }}"></script>
 </body>
 </html>

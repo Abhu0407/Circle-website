@@ -5,7 +5,7 @@ from . import views
 urlpatterns = [
     # Pages (Django TemplateView -> Vue component)
     path('', views.HomePageView.as_view(), name='home'),
-    path('profile/', views.HomePageView.as_view(tab='profile'), name='profile'),
+    path('profile/', views.ProfilePageView.as_view(), name='profile'),
     path('signin/', views.AuthPageView.as_view(mode='signin'), name='signin'),
     path('signup/', views.AuthPageView.as_view(mode='signup'), name='signup'),
 

@@ -50,25 +50,29 @@ Browser ──> Django TemplateView (apps/accounts/views.py)
 | `backend/templates/base.html` | The single Django template every page uses |
 | `backend/apps/accounts/models.py` | Custom `User` model (unique email) |
 | `backend/apps/accounts/views.py` | Page views (`VuePageView`) + JSON API views |
-| `backend/apps/accounts/urls.py` | `/`, `/signin/`, `/signup/`, `/api/auth/...` |
+| `backend/apps/accounts/urls.py` | `/`, `/profile/`, `/signin/`, `/signup/`, `/api/auth/...` |
 | `frontend/main.js` | Mounts the requested `.vue` file |
 | `frontend/api.mjs` | `fetch` helper (CSRF + error parsing) |
 | `frontend/pages/<page>/main.vue` | Entry file Django mounts for each page |
-| `frontend/pages/<page>/<Page>.vue` | The page UI (`auth/Auth.vue` = sign in + sign up, `home/Home.vue`) |
-| `frontend/components/` | `AuthLayout.vue`, `FormField.vue`, `BrandLogo.vue`, `Icon.vue`, `ActivityArt.vue` |
+| `frontend/pages/<page>/<Page>.vue` | The page UI (`auth/Auth.vue` = sign in + sign up, `home/Home.vue` = Discover, `profile/Profile.vue`) |
+| `frontend/components/BaseLayout.vue` | Frame shared by every signed-in page: sidebar, header band, right panel |
+| `frontend/components/` | Also `ActionButton.vue` (the app's button), `Modal.vue`, `MapView.vue`, `AuthLayout.vue`, `FormField.vue`, `BrandLogo.vue`, `Icon.vue`, `ActivityArt.vue` |
 
 ### Adding a new page
 
 1. Create `frontend/pages/mypage/MyPage.vue` (the UI) and
    `frontend/pages/mypage/main.vue` (the entry; it just renders `<MyPage />`).
-2. Add a view:
+   For a signed-in page, wrap `MyPage.vue`'s content in `<BaseLayout>` so it
+   gets the sidebar, header band and right panel (see `profile/Profile.vue`).
+2. Add a view. Signed-in pages extend `AppPageView`, which requires login
+   and passes the props `BaseLayout` needs (`user`, `homeUrl`, ...):
    ```python
-   class MyPageView(VuePageView):
+   class MyPageView(AppPageView):          # or VuePageView for a public page
        vue_component = 'pages/mypage/main.vue'
        page_title = 'My page'
 
        def get_page_props(self):
-           return {'hello': 'world'}   # becomes a prop on MyPage.vue
+           return {**super().get_page_props(), 'hello': 'world'}   # props on MyPage.vue
    ```
 3. Add it to `urls.py`.
 

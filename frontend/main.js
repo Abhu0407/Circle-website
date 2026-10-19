@@ -12,7 +12,8 @@
     moduleCache: { vue: Vue },
 
     async getFile(url) {
-      const res = await fetch(url);
+      // Revalidate every time so edited .vue/.mjs files show up on a normal reload.
+      const res = await fetch(url, { cache: 'no-cache' });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${url}`);
       return {
         getContentData: (asBinary) => (asBinary ? res.arrayBuffer() : res.text()),

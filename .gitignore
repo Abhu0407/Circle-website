@@ -11,3 +11,7 @@ backend/staticfiles/
 
 # Local settings / secrets
 .env
+
+# Map tiles cached by apps/maps, and user uploads
+backend/tile_cache/
+backend/media/

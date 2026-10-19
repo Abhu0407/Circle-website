@@ -47,3 +47,28 @@ export function parseErrors(err) {
   }
   return { fieldErrors, message };
 }
+
+export async function apiGet(url, params = {}) {
+  const query = new URLSearchParams(params).toString();
+  const res = await fetch(query ? `${url}?${query}` : url, { credentials: 'same-origin' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, body);
+  return body;
+}
+
+// PATCH JSON, or a FormData (for file uploads; the browser sets the boundary).
+export async function apiPatch(url, data = {}) {
+  const isForm = data instanceof FormData;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: {
+      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
+      'X-CSRFToken': getCookie('csrftoken'),
+    },
+    body: isForm ? data : JSON.stringify(data),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, body);
+  return body;
+}

@@ -149,7 +149,15 @@ class ProfileTests(TestCase):
 
     def test_profile_page_renders(self):
         response = self.client.get(reverse('profile'))
-        self.assertContains(response, '"tab": "profile"')
+        self.assertContains(response, 'pages/profile/main.vue')
+        self.assertContains(response, '"meApi"')
+
+    def test_home_opens_on_requested_section(self):
+        response = self.client.get(reverse('home') + '?tab=chats')
+        self.assertContains(response, 'pages/home/main.vue')
+        self.assertContains(response, '"tab": "chats"')
+        response = self.client.get(reverse('home') + '?tab=nope')
+        self.assertContains(response, '"tab": "discover"')
 
     def test_update_profile_fields(self):
         response = self.patch({'name': 'Alice A', 'location': 'Pune', 'interested_category': ['Tech', 'Hiking']})

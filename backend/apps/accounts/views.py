@@ -43,6 +43,11 @@ class VuePageView(TemplateView):
         context['vue_component'] = self.vue_component
         context['page_title'] = self.page_title
         context['page_props'] = self.get_page_props()
+        # Changes whenever main.js or global.css is edited, so browsers fetch
+        # the new copy instead of a cached one (.vue files: see main.js).
+        context['asset_version'] = int(max(
+            (settings.FRONTEND_DIR / name).stat().st_mtime for name in ('main.js', 'styles/global.css')
+        ))
         return context
 
 
@@ -82,27 +87,50 @@ class AuthPageView(GuestOnlyMixin, VuePageView):
         }
 
 
-class HomePageView(LoginRequiredMixin, VuePageView):
-    """The signed-in app shell. `tab` picks which section is shown first;
-    /profile/ is the same page opened on the Profile tab."""
-
-    vue_component = 'pages/home/main.vue'
-    tab = 'discover'
-
-    @property
-    def page_title(self):
-        return 'Profile' if self.tab == 'profile' else 'Home'
+class AppPageView(LoginRequiredMixin, VuePageView):
+    """A signed-in page. Its .vue file wraps its content in
+    components/BaseLayout.vue (sidebar, header band, right panel), which
+    needs the props below; subclasses add their own."""
 
     def get_page_props(self):
         return {
             'user': UserSerializer(self.request.user).data,
-            'tab': self.tab,
             'homeUrl': reverse('home'),
             'profileUrl': reverse('profile'),
-            'meApi': reverse('api-me'),
-            'usernameCheckApi': reverse('api-username-check'),
             'signoutApi': reverse('api-signout'),
             'signinUrl': reverse('signin'),
+        }
+
+
+class HomePageView(AppPageView):
+    """Discover, plus the sections still to be built. /?tab=chats opens
+    on that section; the page switches sections without reloading."""
+
+    vue_component = 'pages/home/main.vue'
+    page_title = 'Home'
+    tabs = ('discover', 'communities', 'chats', 'create')
+
+    def get_page_props(self):
+        tab = self.request.GET.get('tab', '')
+        return {
+            **super().get_page_props(),
+            'tab': tab if tab in self.tabs else 'discover',
+        }
+
+
+class ProfilePageView(AppPageView):
+    vue_component = 'pages/profile/main.vue'
+    page_title = 'Profile'
+
+    def get_page_props(self):
+        return {
+            **super().get_page_props(),
+            'meApi': reverse('api-me'),
+            'usernameCheckApi': reverse('api-username-check'),
+            # Leaflet URL template, e.g. /maps/tiles/{z}/{x}/{y}.png
+            'mapTileUrl': reverse('map-tile', args=[0, 0, 0]).replace('0/0/0', '{z}/{x}/{y}'),
+            'mapSearchApi': reverse('api-map-search'),
+            'mapReverseApi': reverse('api-map-reverse'),
         }
 
 
