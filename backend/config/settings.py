@@ -32,7 +32,7 @@ SECRET_KEY = 'django-insecure-ex+^8ad(x-4bfb%+#el4*-f8g!#rq$zcl0hz%(4d7s=g9l8%1s
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.x.x', '0.0.0.0']
 
 
 # Application definition
@@ -46,6 +46,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'apps.accounts',
+    'apps.communities',
+    'apps.maps',
 ]
 
 MIDDLEWARE = [
@@ -130,6 +132,10 @@ STATIC_URL = 'static/'
 FRONTEND_DIR = BASE_DIR.parent / 'frontend'
 STATICFILES_DIRS = [FRONTEND_DIR]
 
+# User uploads (e.g. profile pictures)
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 
 # Authentication
 
@@ -143,6 +149,20 @@ LOGIN_REDIRECT_URL = 'home'
 # JavaScript origins", then set GOOGLE_CLIENT_ID. The Google button is hidden
 # while it is empty.
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+
+# Send only our origin (never full URLs) to other sites. Django's default,
+# 'same-origin', sends nothing, and free map/geocoding services such as
+# OpenStreetMap's block requests that don't say which site they come from.
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+
+# Map on the profile page. Django fetches tiles and place lookups itself and
+# serves them from our own site (apps/maps), caching tiles on disk.
+MAP_TILE_URL = os.environ.get('MAP_TILE_URL', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png')
+MAP_TILE_CACHE_DIR = BASE_DIR / 'tile_cache'
+PHOTON_URL = os.environ.get('PHOTON_URL', 'https://photon.komoot.io')
+# OpenStreetMap asks apps to identify themselves with a contact address, e.g.
+# MAPS_USER_AGENT="Circle/1.0 (you@example.com)" in .env before going live.
+MAPS_USER_AGENT = os.environ.get('MAPS_USER_AGENT', 'CircleWebsite/1.0 (development)')
 
 # The Google sign-in popup needs to talk back to this page.
 SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin-allow-popups'

@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.contrib.auth import login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.core.exceptions import ValidationError
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -11,7 +13,10 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .serializers import GoogleSignInSerializer, SignInSerializer, SignUpSerializer, UserSerializer
+from .serializers import (
+    GoogleSignInSerializer, ProfileSerializer, SignInSerializer, SignUpSerializer, UserSerializer,
+    username_taken,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -78,12 +83,24 @@ class AuthPageView(GuestOnlyMixin, VuePageView):
 
 
 class HomePageView(LoginRequiredMixin, VuePageView):
+    """The signed-in app shell. `tab` picks which section is shown first;
+    /profile/ is the same page opened on the Profile tab."""
+
     vue_component = 'pages/home/main.vue'
-    page_title = 'Home'
+    tab = 'discover'
+
+    @property
+    def page_title(self):
+        return 'Profile' if self.tab == 'profile' else 'Home'
 
     def get_page_props(self):
         return {
             'user': UserSerializer(self.request.user).data,
+            'tab': self.tab,
+            'homeUrl': reverse('home'),
+            'profileUrl': reverse('profile'),
+            'meApi': reverse('api-me'),
+            'usernameCheckApi': reverse('api-username-check'),
             'signoutApi': reverse('api-signout'),
             'signinUrl': reverse('signin'),
         }
@@ -142,3 +159,33 @@ class MeAPIView(APIView):
 
     def get(self, request):
         return Response(UserSerializer(request.user).data)
+
+    def patch(self, request):
+        """Update the profile. Accepts JSON, or multipart when a picture is sent."""
+        serializer = ProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(UserSerializer(user).data)
+
+
+class UsernameCheckAPIView(APIView):
+    """GET ?username=x -> {available, message}. Your own username counts as available."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        username = request.query_params.get('username', '').strip()
+        message = ''
+        if not username:
+            message = 'Username is required.'
+        elif len(username) > 150:
+            message = 'Username must be 150 characters or fewer.'
+        else:
+            try:
+                UnicodeUsernameValidator()(username)
+            except ValidationError:
+                message = 'Use only letters, numbers and @ . + - _'
+            else:
+                if username_taken(username, exclude=request.user):
+                    message = 'This username is already taken.'
+        return Response({'available': not message, 'message': message})

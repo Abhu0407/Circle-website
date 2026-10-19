@@ -1,8 +1,13 @@
+import tempfile
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 from django.urls import reverse
+
+from apps.communities.models import Community
 
 User = get_user_model()
 
@@ -123,3 +128,113 @@ class GoogleSignInTests(TestCase):
 
     def test_client_id_passed_to_page(self):
         self.assertContains(self.client.get(reverse('signin')), '"googleClientId": "test-client-id"')
+
+
+# A 1x1 GIF, small enough to upload as a profile picture.
+TINY_GIF = (
+    b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00'
+    b',\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
+)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class ProfileTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user('alice', 'alice@example.com', 'S3cure-pass!')
+        User.objects.create_user('bob', 'bob@example.com', 'S3cure-pass!')
+        self.client.force_login(self.user)
+
+    def patch(self, data):
+        return self.client.patch(reverse('api-me'), data, content_type='application/json')
+
+    def test_profile_page_renders(self):
+        response = self.client.get(reverse('profile'))
+        self.assertContains(response, '"tab": "profile"')
+
+    def test_update_profile_fields(self):
+        response = self.patch({'name': 'Alice A', 'location': 'Pune', 'interested_category': ['Tech', 'Hiking']})
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(
+            (self.user.name, self.user.location, self.user.interested_category),
+            ('Alice A', 'Pune', ['Tech', 'Hiking']),
+        )
+
+    def test_location_with_map_point(self):
+        response = self.patch({'location': 'Bandra, Mumbai', 'latitude': 19.0596, 'longitude': 72.8295})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual((response.json()['latitude'], response.json()['longitude']), (19.0596, 72.8295))
+
+        # Clearing the pin (location typed by hand).
+        response = self.patch({'location': 'Pune', 'latitude': None, 'longitude': None})
+        self.assertIsNone(response.json()['latitude'])
+
+    def test_map_point_needs_both_halves_and_valid_range(self):
+        self.assertEqual(self.patch({'latitude': 19.0}).status_code, 400)
+        self.assertEqual(self.patch({'latitude': 19.0, 'longitude': None}).status_code, 400)
+        self.assertEqual(self.patch({'latitude': 95, 'longitude': 72}).status_code, 400)
+
+    def test_interests_are_cleaned(self):
+        response = self.patch({'interested_category': [' Tech ', 'tech', '', 'Board   games']})
+        self.assertEqual(response.json()['interested_category'], ['Tech', 'Board games'])
+
+    def test_interests_limit(self):
+        response = self.patch({'interested_category': [f'Topic {i}' for i in range(21)]})
+        self.assertEqual(response.status_code, 400)
+
+    def test_joined_communities_listed_and_leavable(self):
+        hikers = Community.objects.create(name='Hikers', category='Outdoors')
+        coders = Community.objects.create(name='Coders', category='Tech')
+        self.user.join_community.add(hikers, coders)
+
+        joined = self.client.get(reverse('api-me')).json()['join_community']
+        self.assertEqual([c['name'] for c in joined], ['Coders', 'Hikers'])
+        self.assertEqual(joined[0]['members_count'], 1)
+
+        response = self.patch({'join_community': [hikers.id]})
+        self.assertEqual([c['name'] for c in response.json()['join_community']], ['Hikers'])
+
+        response = self.patch({'join_community': []})
+        self.assertEqual(response.json()['join_community'], [])
+
+    def test_email_cannot_be_changed(self):
+        self.patch({'email': 'new@example.com'})
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, 'alice@example.com')
+
+    def test_username_change(self):
+        self.assertEqual(self.patch({'username': 'alice2'}).status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, 'alice2')
+
+    def test_username_must_be_unique_ignoring_case(self):
+        response = self.patch({'username': 'BOB'})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('username', response.json())
+
+    def test_keeping_own_username_is_allowed(self):
+        self.assertEqual(self.patch({'username': 'alice', 'name': 'A'}).status_code, 200)
+
+    def test_username_check(self):
+        url = reverse('api-username-check')
+        self.assertTrue(self.client.get(url, {'username': 'carol'}).json()['available'])
+        self.assertTrue(self.client.get(url, {'username': 'Alice'}).json()['available'])
+        self.assertFalse(self.client.get(url, {'username': 'Bob'}).json()['available'])
+        self.assertFalse(self.client.get(url, {'username': 'bad name!'}).json()['available'])
+
+    def test_upload_and_remove_picture(self):
+        picture = SimpleUploadedFile('me.gif', TINY_GIF, content_type='image/gif')
+        response = self.client.patch(
+            reverse('api-me'),
+            encode_multipart(BOUNDARY, {'profile_picture': picture}),
+            content_type=MULTIPART_CONTENT,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['profile_picture'])
+
+        response = self.patch({'remove_profile_picture': True})
+        self.assertIsNone(response.json()['profile_picture'])
+
+    def test_profile_requires_login(self):
+        self.client.logout()
+        self.assertEqual(self.patch({'name': 'x'}).status_code, 403)
