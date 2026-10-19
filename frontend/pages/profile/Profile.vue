@@ -10,7 +10,8 @@
     :profile-url="profileUrl"
     :signout-api="signoutApi"
     :signin-url="signinUrl"
-    :people="people"
+    :map-tile-url="mapTileUrl"
+    :map-people="mapPeople"
     :events="events"
   >
     <section class="profile">
@@ -124,12 +125,12 @@
         <!-- ---------- Interests ---------- -->
         <article ref="interestsCard" class="card card--interests" :class="{ 'card--flash': flashing === interestsCard }">
           <header class="card__head">
-            <h2 class="card__title">Interests <span class="card__count">{{ interests.length }} / {{ MAX_INTERESTS }}</span></h2>
+            <h2 class="card__title">Interests <span class="card__count">{{ interests.length }} / {{ communityCategories.length }}</span></h2>
             <!-- When empty, only the button in the middle of the card is shown. -->
             <ActionButton
-              v-if="interests.length && interests.length < MAX_INTERESTS"
-              icon="plus"
-              label="Add interests"
+              v-if="interests.length"
+              icon="edit"
+              label="Edit interests"
               size="sm"
               compact
               @click="openInterests"
@@ -137,9 +138,9 @@
           </header>
 
           <ul v-if="interests.length" class="tags">
-            <li v-for="name in interests" :key="name" class="tag">
-              <span>{{ name }}</span>
-              <button type="button" class="tag__x" :aria-label="`Remove ${name}`" @click="removeInterest(name)">
+            <li v-for="key in interests" :key="key" class="tag">
+              <span>{{ labelOf(key) }}</span>
+              <button type="button" class="tag__x" :aria-label="`Remove ${labelOf(key)}`" @click="removeInterest(key)">
                 <Icon name="close" :size="12" />
               </button>
             </li>
@@ -163,9 +164,9 @@
               <img v-if="c.image" :src="c.image" alt="" class="group__img" />
               <span v-else class="group__img group__img--initial" :style="gradientFor(c.name)">{{ c.name.charAt(0) }}</span>
               <div class="group__info">
-                <strong>{{ c.name }}</strong>
+                <a :href="c.url" class="group__name">{{ c.name }}</a>
                 <span>
-                  <template v-if="c.category">{{ c.category }} · </template>
+                  <template v-if="c.category_label">{{ c.category_label }} · </template>
                   {{ c.members_count }} {{ c.members_count === 1 ? 'member' : 'members' }}
                 </span>
               </div>
@@ -237,62 +238,32 @@
         </template>
       </Modal>
 
-      <!-- ---------- Add interests ---------- -->
-      <Modal v-if="interestsOpen" title="Add interests" @close="interestsOpen = false">
-        <form class="add" @submit.prevent="addPending(newInterest)">
-          <input
-            ref="interestInput"
-            v-model="newInterest"
-            type="text"
-            maxlength="200"
-            placeholder="Type an interest and press Enter"
-            aria-label="New interest"
-            :disabled="remaining <= 0"
-          />
-          <ActionButton type="submit" icon="plus" label="Add to list" :disabled="!newInterest.trim() || remaining <= 0" />
-        </form>
-        <p class="pick-hint">Tip: separate several with commas, e.g. <em>Chess, Cooking, Yoga</em></p>
-
-        <div class="pick">
-          <span class="pick__label">To add ({{ pending.length }})</span>
-          <ul v-if="pending.length" class="tags">
-            <li v-for="name in pending" :key="name" class="tag tag--new">
-              <span>{{ name }}</span>
-              <button type="button" class="tag__x" :aria-label="`Remove ${name} from the list`" @click="togglePending(name)">
-                <Icon name="close" :size="12" />
-              </button>
-            </li>
-          </ul>
-          <p v-else class="muted">Nothing yet. Type above or pick from the suggestions.</p>
-        </div>
-
-        <div v-if="popupSuggestions.length" class="pick">
-          <span class="pick__label">Suggestions</span>
-          <div class="suggest">
-            <button
-              v-for="name in popupSuggestions"
-              :key="name"
-              type="button"
-              class="suggest__chip"
-              :class="{ 'suggest__chip--on': isPending(name) }"
-              :aria-pressed="isPending(name)"
-              :disabled="!isPending(name) && remaining <= 0"
-              @click="togglePending(name)"
-            >
-              <Icon :name="isPending(name) ? 'check' : 'plus'" :size="12" /> {{ name }}
-            </button>
-          </div>
+      <!-- ---------- Interests (community categories) ---------- -->
+      <Modal v-if="interestsOpen" title="Your interests" wide @close="interestsOpen = false">
+        <p class="pick-hint">Pick the kinds of communities you like. These are the same categories communities use.</p>
+        <div class="suggest" role="group" aria-label="Interests">
+          <button
+            v-for="c in communityCategories"
+            :key="c.value"
+            type="button"
+            class="suggest__chip"
+            :class="{ 'suggest__chip--on': picked.includes(c.value) }"
+            :aria-pressed="picked.includes(c.value)"
+            @click="togglePicked(c.value)"
+          >
+            <Icon :name="picked.includes(c.value) ? 'check' : 'plus'" :size="12" /> {{ c.label }}
+          </button>
         </div>
 
         <p v-if="interestError" class="form-error" role="alert">{{ interestError }}</p>
-        <p v-else class="pick-hint">{{ remaining }} of {{ MAX_INTERESTS }} spots left.</p>
+        <p v-else class="pick-hint">{{ picked.length }} selected</p>
 
         <template #footer>
           <ActionButton icon="close" label="Cancel" variant="secondary" @click="interestsOpen = false" />
           <ActionButton
             icon="check"
-            :label="saving ? 'Saving…' : saveLabel"
-            :disabled="saving || (!pending.length && !newInterest.trim())"
+            :label="saving ? 'Saving…' : 'Save interests'"
+            :disabled="saving || !interestsChanged"
             @click="saveInterests"
           />
         </template>
@@ -364,7 +335,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { apiGet, apiPatch, parseErrors } from '../../api.mjs';
 import ActionButton from '../../components/ActionButton.vue';
 import BaseLayout from '../../components/BaseLayout.vue';
@@ -380,18 +351,18 @@ const props = defineProps({
   profileUrl: { type: String, required: true },
   signoutApi: { type: String, required: true },
   signinUrl: { type: String, required: true },
-  people: { type: Array, default: () => [] },
+  mapPeople: { type: Array, default: () => [] },
   events: { type: Array, default: () => [] },
   meApi: { type: String, required: true },
   usernameCheckApi: { type: String, required: true },
   mapTileUrl: { type: String, required: true },
   mapSearchApi: { type: String, required: true },
   mapReverseApi: { type: String, required: true },
+  // [{ value, label }]: the community categories; interests are picked from these.
+  communityCategories: { type: Array, default: () => [] },
 });
 
-const MAX_INTERESTS = 20;
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
-const SUGGESTED = ['Sports', 'Tech', 'Arts', 'Music', 'Hiking', 'Food', 'Gaming', 'Photography', 'Travel', 'Books'];
 const GRADIENTS = [
   ['#22b8c9', '#1f6fe5'],
   ['#f59f00', '#e8590c'],
@@ -507,7 +478,7 @@ watch(() => form.username, (value) => {
   usernameStatus.value = { kind: 'checking', text: 'Checking availability…' };
   usernameTimer = setTimeout(async () => {
     try {
-      const res = await apiGet(me.valuenameCheckApi, { username });
+      const res = await apiGet(props.usernameCheckApi, { username });
       if (form.username.trim() !== username) return; // typed again since
       usernameStatus.value = res.available ? { kind: 'ok', text: 'Username is available.' } : null;
       usernameError.value = res.available ? '' : res.message;
@@ -554,74 +525,32 @@ function scrollToCard(card) {
   flashTimer = setTimeout(() => (flashing.value = null), 1400);
 }
 
-// ---------- interests ----------
+// ---------- interests (community category keys, e.g. "sports") ----------
 const interestsOpen = ref(false);
-const interestInput = ref(null);
-const newInterest = ref('');
-const pending = ref([]); // picked in the popup, saved together
+const picked = ref([]); // keys chosen in the popup, saved together
 const interestError = ref('');
 
-const remaining = computed(() => MAX_INTERESTS - interests.value.length - pending.value.length);
-const popupSuggestions = computed(() => {
-  const have = new Set(interests.value.map((i) => i.toLowerCase()));
-  return SUGGESTED.filter((s) => !have.has(s.toLowerCase()));
-});
-const saveLabel = computed(() => {
-  const n = pending.value.length + (newInterest.value.trim() ? 1 : 0);
-  return n > 1 ? `Save ${n} interests` : 'Save interest';
-});
-
-const cleanName = (raw) => raw.split(/\s+/).filter(Boolean).join(' ').slice(0, 50);
-const isPending = (name) => pending.value.some((p) => p.toLowerCase() === name.toLowerCase());
+const labelOf = (key) => (props.communityCategories.find((c) => c.value === key) || {}).label || key;
+const interestsChanged = computed(
+  () => picked.value.length !== interests.value.length || picked.value.some((key) => !interests.value.includes(key))
+);
 
 function openInterests() {
-  pending.value = [];
-  newInterest.value = '';
+  picked.value = [...interests.value];
   interestError.value = '';
   interestsOpen.value = true;
-  nextTick(() => interestInput.value && interestInput.value.focus());
 }
 
-// Add one or more comma-separated names to the popup list.
-function addPending(raw) {
-  interestError.value = '';
-  const skipped = [];
-  for (const part of raw.split(',')) {
-    const name = cleanName(part);
-    if (!name) continue;
-    if (interests.value.some((i) => i.toLowerCase() === name.toLowerCase()) || isPending(name)) {
-      skipped.push(name);
-    } else if (remaining.value <= 0) {
-      interestError.value = `You can have up to ${MAX_INTERESTS} interests.`;
-      break;
-    } else {
-      pending.value.push(name);
-    }
-  }
-  if (skipped.length && !interestError.value) {
-    interestError.value = `Already added: ${skipped.join(', ')}`;
-  }
-  newInterest.value = '';
-}
-
-function togglePending(name) {
-  if (isPending(name)) {
-    pending.value = pending.value.filter((p) => p.toLowerCase() !== name.toLowerCase());
-    interestError.value = '';
-  } else {
-    addPending(name);
-  }
+function togglePicked(key) {
+  picked.value = picked.value.includes(key) ? picked.value.filter((k) => k !== key) : [...picked.value, key];
 }
 
 async function saveInterests() {
-  if (newInterest.value.trim()) addPending(newInterest.value); // typed but not added yet
-  if (!pending.value.length) return;
-  const count = pending.value.length;
   saving.value = true;
   const ok = await save(
-    { interested_category: [...interests.value, ...pending.value] },
+    { interested_category: picked.value },
     {
-      success: count === 1 ? 'Interest added' : `${count} interests added`,
+      success: 'Interests saved',
       onError: ({ fieldErrors, message }) => {
         interestError.value = fieldErrors.interested_category || message;
       },
@@ -631,8 +560,8 @@ async function saveInterests() {
   if (ok) interestsOpen.value = false;
 }
 
-async function removeInterest(name) {
-  await save({ interested_category: interests.value.filter((i) => i !== name) });
+async function removeInterest(key) {
+  await save({ interested_category: interests.value.filter((k) => k !== key) });
 }
 
 // ---------- communities ----------
@@ -1275,9 +1204,10 @@ button:disabled {
   min-width: 0;
 }
 
-.group__info strong {
+.group__name {
   overflow: hidden;
   font-weight: 600;
+  color: var(--text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

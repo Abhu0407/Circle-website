@@ -152,6 +152,15 @@ class ProfileTests(TestCase):
         self.assertContains(response, 'pages/profile/main.vue')
         self.assertContains(response, '"meApi"')
 
+    def test_map_shows_other_people_with_a_point(self):
+        User.objects.filter(username='bob').update(latitude=19.07612, longitude=72.87765)
+        User.objects.create_user('carol', 'carol@example.com', 'S3cure-pass!')  # no point
+        self.user.latitude, self.user.longitude = 19.1, 72.9
+        self.user.save()
+        response = self.client.get(reverse('home'))
+        people = response.context['page_props']['mapPeople']
+        self.assertEqual([(p['username'], p['lat'], p['lng']) for p in people], [('bob', 19.08, 72.88)])
+
     def test_home_opens_on_requested_section(self):
         response = self.client.get(reverse('home') + '?tab=chats')
         self.assertContains(response, 'pages/home/main.vue')
@@ -160,12 +169,12 @@ class ProfileTests(TestCase):
         self.assertContains(response, '"tab": "discover"')
 
     def test_update_profile_fields(self):
-        response = self.patch({'name': 'Alice A', 'location': 'Pune', 'interested_category': ['Tech', 'Hiking']})
+        response = self.patch({'name': 'Alice A', 'location': 'Pune', 'interested_category': ['tech', 'outdoors']})
         self.assertEqual(response.status_code, 200)
         self.user.refresh_from_db()
         self.assertEqual(
             (self.user.name, self.user.location, self.user.interested_category),
-            ('Alice A', 'Pune', ['Tech', 'Hiking']),
+            ('Alice A', 'Pune', ['tech', 'outdoors']),
         )
 
     def test_location_with_map_point(self):
@@ -182,17 +191,18 @@ class ProfileTests(TestCase):
         self.assertEqual(self.patch({'latitude': 19.0, 'longitude': None}).status_code, 400)
         self.assertEqual(self.patch({'latitude': 95, 'longitude': 72}).status_code, 400)
 
-    def test_interests_are_cleaned(self):
-        response = self.patch({'interested_category': [' Tech ', 'tech', '', 'Board   games']})
-        self.assertEqual(response.json()['interested_category'], ['Tech', 'Board games'])
+    def test_interests_deduplicated(self):
+        response = self.patch({'interested_category': ['music', 'tech', 'music']})
+        self.assertEqual(response.json()['interested_category'], ['music', 'tech'])
 
-    def test_interests_limit(self):
-        response = self.patch({'interested_category': [f'Topic {i}' for i in range(21)]})
+    def test_interests_only_from_categories(self):
+        response = self.patch({'interested_category': ['music', 'Board games']})
         self.assertEqual(response.status_code, 400)
+        self.assertIn('interested_category', response.json())
 
     def test_joined_communities_listed_and_leavable(self):
-        hikers = Community.objects.create(name='Hikers', category='Outdoors')
-        coders = Community.objects.create(name='Coders', category='Tech')
+        hikers = Community.objects.create(name='Hikers', category='outdoors')
+        coders = Community.objects.create(name='Coders', category='tech')
         self.user.join_community.add(hikers, coders)
 
         joined = self.client.get(reverse('api-me')).json()['join_community']

@@ -10,13 +10,12 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from rest_framework import serializers
 
-from apps.communities.models import Community
+from apps.communities.models import Category, Community
 from apps.communities.serializers import CommunitySerializer
 
 User = get_user_model()
 
 MAX_PROFILE_PICTURE_SIZE = 5 * 1024 * 1024
-MAX_INTERESTS = 20
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -39,8 +38,13 @@ class ProfileSerializer(serializers.ModelSerializer):
     """
 
     remove_profile_picture = serializers.BooleanField(write_only=True, required=False, default=False)
+    # Interests are community categories (keys such as "sports").
     interested_category = serializers.ListField(
-        child=serializers.CharField(max_length=50, allow_blank=True), required=False,
+        child=serializers.ChoiceField(
+            choices=Category.choices,
+            error_messages={'invalid_choice': 'Pick interests from the list of categories.'},
+        ),
+        required=False,
     )
     # Ids of the communities to stay in; leaving one = sending the list without it.
     join_community = serializers.PrimaryKeyRelatedField(
@@ -65,16 +69,8 @@ class ProfileSerializer(serializers.ModelSerializer):
         return value
 
     def validate_interested_category(self, value):
-        """Trim names, drop blanks and case-insensitive duplicates."""
-        interests, seen = [], set()
-        for name in value:
-            name = ' '.join(name.split())
-            if name and name.lower() not in seen:
-                seen.add(name.lower())
-                interests.append(name)
-        if len(interests) > MAX_INTERESTS:
-            raise serializers.ValidationError(f'You can add up to {MAX_INTERESTS} interests.')
-        return interests
+        """Drop duplicates, keeping the order they were picked in."""
+        return list(dict.fromkeys(value))
 
     def validate(self, attrs):
         # A map point needs both halves.

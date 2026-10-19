@@ -9,7 +9,8 @@ class User(AbstractUser):
     # `username` is inherited from AbstractUser.
     name = models.CharField(max_length=150, blank=True)
     email = models.EmailField(unique=True)
-    # List of interest names, e.g. ["Tech", "Hiking"]; users can add their own.
+    # Interests: community category keys (communities.models.Category),
+    # e.g. ["sports", "music"].
     interested_category = models.JSONField(default=list, blank=True)
     # The communities this user has joined.
     join_community = models.ManyToManyField(

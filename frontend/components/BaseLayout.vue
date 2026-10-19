@@ -11,6 +11,7 @@
 
   Menu items are links. Items listed in `localTabs` are handled by the page
   itself without a reload: clicking one emits `navigate` with its id.
+  On phones the menu is hidden behind a ☰ button and opens as a list.
 -->
 <template>
   <div class="layout">
@@ -26,7 +27,18 @@
         </a>
       </div>
 
-      <nav class="nav" aria-label="Main">
+      <button
+        type="button"
+        class="menu-btn"
+        :aria-expanded="navOpen"
+        aria-controls="main-nav"
+        :aria-label="navOpen ? 'Close menu' : 'Open menu'"
+        @click="navOpen = !navOpen"
+      >
+        <Icon :name="navOpen ? 'close' : 'menu'" />
+      </button>
+
+      <nav id="main-nav" class="nav" :class="{ 'nav--open': navOpen }" aria-label="Main">
         <a
           v-for="item in NAV"
           :key="item.id"
@@ -88,33 +100,17 @@
     <!-- ---------- Right panel ---------- -->
     <aside class="aside">
       <section class="panel">
-        <h2 class="panel__title">Quick Activity Map</h2>
-        <div class="map">
-          <svg viewBox="0 0 200 220" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-            <rect width="200" height="220" fill="#cfe2f2" />
-            <path
-              d="M78 0H200V220H128C118 204 106 192 100 172C92 152 66 142 68 118C70 98 56 84 60 62C64 42 80 26 78 0Z"
-              fill="#eef2f6"
-            />
-            <path d="M200 120C180 118 168 126 150 124" fill="none" stroke="#cfe2f2" stroke-width="6" />
-            <ellipse cx="160" cy="54" rx="26" ry="18" fill="#cfe8c9" />
-            <ellipse cx="118" cy="150" rx="10" ry="7" fill="#cfe8c9" />
-            <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round">
-              <path d="M96 0C100 60 92 120 120 220" />
-              <path d="M130 0C134 70 140 140 150 220" />
-              <path d="M72 100C110 96 160 104 200 96" />
-              <path d="M84 40C120 44 160 30 200 34" />
-            </g>
-          </svg>
-          <span class="map__you" style="left: 60%; top: 70%" title="You"></span>
-          <span
-            v-for="p in people"
-            :key="p.id"
-            class="map__pin"
-            :style="{ left: p.map.x + '%', top: p.map.y + '%', '--a': p.colors[0], '--b': p.colors[1] }"
-            :title="`${p.name} · ${p.distanceKm} km`"
-          ><span>{{ p.name[0] }}</span></span>
+        <div class="panel__head">
+          <h2 class="panel__title">Quick Activity Map</h2>
+          <button type="button" class="panel__expand" aria-label="Open large map" title="Open large map" @click="mapOpen = true">
+            <Icon name="expand" :size="16" />
+          </button>
         </div>
+        <PeopleMap :tile-url="mapTileUrl" :people="mapPeople" :me="user" />
+
+        <Modal v-if="mapOpen" :title="mapTitle" large @close="mapOpen = false">
+          <PeopleMap :tile-url="mapTileUrl" :people="mapPeople" :me="user" large />
+        </Modal>
       </section>
 
       <section class="panel">
@@ -136,9 +132,11 @@ import { computed, ref } from 'vue';
 import { apiPost } from '../api.mjs';
 import BrandLogo from './BrandLogo.vue';
 import Icon from './Icon.vue';
+import Modal from './Modal.vue';
+import PeopleMap from './PeopleMap.vue';
 
-// people: [{ id, name, colors: [a, b], distanceKm, map: { x, y } }]  (map pins)
-// events: [{ id, title, time, color }]                              (Happening Now)
+// mapPeople: [{ id, username, lat, lng }]  (Quick Activity Map pins)
+// events:    [{ id, title, time, color }]  (Happening Now)
 const props = defineProps({
   user: { type: Object, required: true },
   // Which menu item is highlighted.
@@ -149,7 +147,8 @@ const props = defineProps({
   profileUrl: { type: String, required: true },
   signoutApi: { type: String, required: true },
   signinUrl: { type: String, required: true },
-  people: { type: Array, default: () => [] },
+  mapTileUrl: { type: String, required: true },
+  mapPeople: { type: Array, default: () => [] },
   events: { type: Array, default: () => [] },
 });
 const emit = defineEmits(['navigate']);
@@ -164,6 +163,13 @@ const NAV = [
 const CREATE = { id: 'create', label: 'Create Community', icon: 'plus', href: tabUrl('create') };
 
 const menuOpen = ref(false);
+// Phone-width menu (☰).
+const navOpen = ref(false);
+const mapOpen = ref(false);
+const mapTitle = computed(() => {
+  const n = props.mapPeople.length;
+  return n ? `Activity Map · ${n} ${n === 1 ? 'person' : 'people'}` : 'Activity Map';
+});
 const signingOut = ref(false);
 
 const displayName = computed(
@@ -173,6 +179,7 @@ const initial = computed(() => displayName.value.charAt(0).toUpperCase());
 const cityName = computed(() => (props.user.location || '').split(',')[0].trim());
 
 function onNav(event, id) {
+  navOpen.value = false;
   if (!props.localTabs.includes(id)) return; // normal link: load that page
   event.preventDefault();
   emit('navigate', id);
@@ -246,6 +253,10 @@ button {
   text-decoration: none;
   color: var(--night-text);
   background: rgba(255, 255, 255, 0.12);
+}
+
+.menu-btn {
+  display: none;
 }
 
 .nav {
@@ -448,6 +459,34 @@ button {
   box-shadow: var(--shadow);
 }
 
+.panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.panel__head .panel__title {
+  margin: 0;
+}
+
+.panel__expand {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--muted);
+  background: var(--surface-muted);
+  border: 0;
+  border-radius: 8px;
+}
+
+.panel__expand:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
 .panel__title {
   margin: 0 0 12px;
   font-size: 16px;
@@ -462,51 +501,6 @@ button {
   color: var(--muted);
   background: var(--surface-muted);
   border-radius: 10px;
-}
-
-.map {
-  position: relative;
-  height: 230px;
-  overflow: hidden;
-  border-radius: 12px;
-}
-
-.map svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.map__pin {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, var(--a), var(--b));
-  border: 2px solid #fff;
-  border-radius: 50% 50% 50% 0;
-  box-shadow: 0 4px 10px rgba(8, 19, 31, 0.25);
-  transform: translate(-50%, -100%) rotate(-45deg);
-}
-
-/* Keep the letter upright inside the rotated pin. */
-.map__pin > span {
-  transform: rotate(45deg);
-}
-
-.map__you {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  background: var(--primary);
-  border: 3px solid #fff;
-  border-radius: 50%;
-  box-shadow: 0 0 0 6px rgba(31, 111, 229, 0.2);
-  transform: translate(-50%, -50%);
 }
 
 .events {
@@ -581,28 +575,42 @@ button {
   .location {
     margin-left: 0;
   }
-  .nav {
-    order: 3;
-    flex-direction: row;
-    width: 100%;
-    margin-top: 12px;
-    padding: 0;
-    overflow-x: auto;
-  }
-  .nav__item {
-    flex: none;
-    width: auto;
-    padding: 8px 12px;
-    font-size: 14px;
+  .menu-btn {
+    display: grid;
+    order: 2;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    margin-left: 8px;
+    color: var(--night-text);
+    background: rgba(255, 255, 255, 0.07);
+    border: 0;
     border-radius: 10px;
   }
-  .nav__item--active {
-    box-shadow: inset 0 -2px 0 var(--teal);
+  .menu-btn:hover,
+  .menu-btn[aria-expanded='true'] {
+    background: rgba(255, 255, 255, 0.14);
+  }
+  .nav {
+    order: 3;
+    display: none;
+    width: 100%;
+    margin-top: 12px;
+    padding: 8px 0 0;
+    border-top: 1px solid var(--night-border);
+  }
+  .nav--open {
+    display: flex;
+  }
+  .nav__item {
+    padding: 11px 14px;
+    border-radius: 10px;
   }
   .nav__divider {
-    display: none;
+    margin: 6px 0;
   }
   .account {
+    order: 1;
     margin: 0 0 0 auto;
     padding: 0;
     border: 0;

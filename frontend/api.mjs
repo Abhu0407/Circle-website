@@ -13,20 +13,25 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiPost(url, data = {}) {
+// Send JSON, or a FormData (for file uploads; the browser sets the boundary).
+async function send(method, url, data) {
+  const isForm = data instanceof FormData;
   const res = await fetch(url, {
-    method: 'POST',
+    method,
     credentials: 'same-origin',
     headers: {
-      'Content-Type': 'application/json',
+      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
       'X-CSRFToken': getCookie('csrftoken'),
     },
-    body: JSON.stringify(data),
+    body: data === undefined ? undefined : isForm ? data : JSON.stringify(data),
   });
-
   const body = res.status === 204 ? {} : await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(res.status, body);
   return body;
+}
+
+export function apiPost(url, data = {}) {
+  return send('POST', url, data);
 }
 
 // Turn DRF error responses ({field: ["msg"], non_field_errors: [...]})
@@ -56,19 +61,10 @@ export async function apiGet(url, params = {}) {
   return body;
 }
 
-// PATCH JSON, or a FormData (for file uploads; the browser sets the boundary).
-export async function apiPatch(url, data = {}) {
-  const isForm = data instanceof FormData;
-  const res = await fetch(url, {
-    method: 'PATCH',
-    credentials: 'same-origin',
-    headers: {
-      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
-      'X-CSRFToken': getCookie('csrftoken'),
-    },
-    body: isForm ? data : JSON.stringify(data),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, body);
-  return body;
+export function apiPatch(url, data = {}) {
+  return send('PATCH', url, data);
+}
+
+export function apiDelete(url) {
+  return send('DELETE', url);
 }

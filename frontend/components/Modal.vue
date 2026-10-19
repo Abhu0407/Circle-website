@@ -2,6 +2,7 @@
   Centered dialog with a dimmed backdrop. Closes on Esc, the X button or a
   backdrop click. Usage:
     <Modal v-if="open" title="Edit profile" @close="open = false">...<template #footer>...</template></Modal>
+  `wide` makes it wider; `large` makes it nearly fill the screen (e.g. a big map).
 -->
 <template>
   <Teleport to="body">
@@ -9,7 +10,7 @@
       <section
         ref="dialog"
         class="modal__dialog"
-        :class="{ 'modal__dialog--wide': wide }"
+        :class="{ 'modal__dialog--wide': wide, 'modal__dialog--large': large }"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="titleId"
@@ -35,6 +36,7 @@ import Icon from './Icon.vue';
 defineProps({
   title: { type: String, required: true },
   wide: { type: Boolean, default: false },
+  large: { type: Boolean, default: false },
 });
 const emit = defineEmits(['close']);
 
@@ -87,6 +89,10 @@ onBeforeUnmount(() => {
 
 .modal__dialog--wide {
   width: min(680px, 100%);
+}
+
+.modal__dialog--large {
+  width: min(1200px, 100%);
 }
 
 .modal__head {

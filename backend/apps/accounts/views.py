@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.contrib.auth import login, logout
+from django.contrib.auth import get_user_model, login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.core.exceptions import ValidationError
@@ -12,6 +12,8 @@ from django.views.generic import TemplateView
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from apps.communities.serializers import category_choices
 
 from .serializers import (
     GoogleSignInSerializer, ProfileSerializer, SignInSerializer, SignUpSerializer, UserSerializer,
@@ -87,6 +89,33 @@ class AuthPageView(GuestOnlyMixin, VuePageView):
         }
 
 
+# Decimal places kept when showing other people on the map (~1 km), so
+# their exact address isn't shared with everyone.
+MAP_PEOPLE_PRECISION = 2
+
+
+def map_people(exclude, users=None):
+    """Everyone else (or else in `users`) who has set a map point:
+    [{id, username, lat, lng}]."""
+    if users is None:
+        users = get_user_model().objects.all()
+    users = (
+        users
+        .filter(is_active=True, latitude__isnull=False, longitude__isnull=False)
+        .exclude(pk=exclude.pk)
+        .values('id', 'username', 'latitude', 'longitude')
+    )
+    return [
+        {
+            'id': u['id'],
+            'username': u['username'],
+            'lat': round(u['latitude'], MAP_PEOPLE_PRECISION),
+            'lng': round(u['longitude'], MAP_PEOPLE_PRECISION),
+        }
+        for u in users
+    ]
+
+
 class AppPageView(LoginRequiredMixin, VuePageView):
     """A signed-in page. Its .vue file wraps its content in
     components/BaseLayout.vue (sidebar, header band, right panel), which
@@ -99,6 +128,15 @@ class AppPageView(LoginRequiredMixin, VuePageView):
             'profileUrl': reverse('profile'),
             'signoutApi': reverse('api-signout'),
             'signinUrl': reverse('signin'),
+            # Leaflet URL template, e.g. /maps/tiles/{z}/{x}/{y}.png
+            'mapTileUrl': reverse('map-tile', args=[0, 0, 0]).replace('0/0/0', '{z}/{x}/{y}'),
+            # Pins on the Quick Activity Map.
+            'mapPeople': map_people(exclude=self.request.user),
+            # [{value, label}]: community categories, also used as interests.
+            'communityCategories': category_choices(),
+            # Place search for location pickers.
+            'mapSearchApi': reverse('api-map-search'),
+            'mapReverseApi': reverse('api-map-reverse'),
         }
 
 
@@ -115,6 +153,10 @@ class HomePageView(AppPageView):
         return {
             **super().get_page_props(),
             'tab': tab if tab in self.tabs else 'discover',
+            # Posts feed on the My Communities tab.
+            'postsApi': reverse('api-posts'),
+            # Create Community tab.
+            'communitiesApi': reverse('api-communities'),
         }
 
 
@@ -127,10 +169,6 @@ class ProfilePageView(AppPageView):
             **super().get_page_props(),
             'meApi': reverse('api-me'),
             'usernameCheckApi': reverse('api-username-check'),
-            # Leaflet URL template, e.g. /maps/tiles/{z}/{x}/{y}.png
-            'mapTileUrl': reverse('map-tile', args=[0, 0, 0]).replace('0/0/0', '{z}/{x}/{y}'),
-            'mapSearchApi': reverse('api-map-search'),
-            'mapReverseApi': reverse('api-map-reverse'),
         }
 
 

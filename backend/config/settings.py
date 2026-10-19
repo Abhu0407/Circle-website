@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'apps.accounts',
     'apps.communities',
     'apps.maps',
+    'apps.posts',
 ]
 
 MIDDLEWARE = [
