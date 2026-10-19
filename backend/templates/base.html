@@ -1,0 +1,26 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page_title %}{{ page_title }} · {% endif %}Circle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="{% static 'styles/global.css' %}">
+</head>
+<body>
+  {# Vue mounts the component named by the view (e.g. pages/SignIn.vue) here. #}
+  <div id="app" data-component="{% static vue_component %}">
+    <div class="page-loading">Loading…</div>
+  </div>
+
+  {# Data from the Django view, passed to the Vue component as props. #}
+  {{ page_props|json_script:"page-props" }}
+
+  {# Vue 3 + vue3-sfc-loader compile .vue files in the browser: no npm build step. #}
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader@0.9.5/dist/vue3-sfc-loader.js"></script>
+  <script src="{% static 'main.js' %}"></script>
+</body>
+</html>

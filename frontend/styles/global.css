@@ -1,0 +1,75 @@
+:root {
+  /* App surfaces (light cards, like the Discover screen) */
+  --bg: #eef3f8;
+  --surface: #ffffff;
+  --surface-muted: #f4f7fb;
+  --text: #142033;
+  --muted: #5f6b7d;
+  --border: #dfe5ee;
+
+  /* Brand */
+  --primary: #1f6fe5;
+  --primary-hover: #185bc4;
+  --primary-soft: #e8f0fd;
+  --teal: #22b8c9;
+
+  /* Dark shell (sidebar / background) */
+  --night-900: #08131f;
+  --night-800: #0d1c2e;
+  --night-700: #13284a;
+  --night-text: #e7eef8;
+  --night-muted: #9fb0c6;
+  --night-border: rgba(255, 255, 255, 0.1);
+
+  /* Status */
+  --green: #2fb36d;
+  --green-dark: #1e7a48;
+  --green-soft: #e7f7ee;
+  --red: #e0475b;
+  --blue: #4c8df6;
+  --amber: #f59f00;
+  --danger: #c92a3a;
+  --danger-bg: #fdecee;
+
+  --focus: rgba(31, 111, 229, 0.22);
+  --radius: 16px;
+  --shadow: 0 12px 32px rgba(8, 19, 31, 0.12);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.page-loading {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  color: var(--muted);
+}
