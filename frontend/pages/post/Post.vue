@@ -36,6 +36,6 @@ const props = defineProps({
 
 // After deleting the post, go back to its community.
 function leave() {
-  window.location.href = props.post.community.url;
+  window.circleNavigate(props.post.community.url);
 }
 </script>

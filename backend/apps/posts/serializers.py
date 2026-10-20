@@ -3,6 +3,7 @@ from django.urls import reverse
 from rest_framework import serializers
 
 from apps.communities.models import Community
+from apps.communities.serializers import DiscoverCommunitySerializer
 
 from .models import Comment, Post
 
@@ -18,6 +19,7 @@ class AuthorSerializer(serializers.ModelSerializer):
 
 
 class PostCommunitySerializer(serializers.ModelSerializer):
+    image = serializers.CharField(source='cover_url', read_only=True)
     url = serializers.SerializerMethodField()
 
     class Meta:
@@ -107,6 +109,16 @@ class PostSerializer(serializers.ModelSerializer):
         if remove and not new_image:
             validated_data['image'] = None
         return super().update(instance, validated_data)
+
+
+class SuggestedCommunitySerializer(DiscoverCommunitySerializer):
+    """A community suggested on For You (see feed.suggested_communities),
+    with `reason`: a short "why this one"."""
+
+    reason = serializers.CharField(read_only=True)
+
+    class Meta(DiscoverCommunitySerializer.Meta):
+        fields = DiscoverCommunitySerializer.Meta.fields + ('reason',)
 
 
 class CommentSerializer(serializers.ModelSerializer):

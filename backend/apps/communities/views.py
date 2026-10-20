@@ -63,7 +63,7 @@ class CommunityListCreateAPIView(generics.ListCreateAPIView):
       ?q=        words found in the name, description, location or category
       ?category= a Category key; repeat it to allow several
       ?within=   km from your Profile location (needs one, else 400)
-    POST: create one (JSON, or multipart with an `image`); you join it."""
+    POST: create one (JSON); you join it."""
 
     permission_classes = [permissions.IsAuthenticated]
 
@@ -117,8 +117,8 @@ class IsCreatorOrReadOnly(permissions.BasePermission):
 
 
 class CommunityDetailAPIView(generics.RetrieveUpdateAPIView):
-    """GET a community. PATCH (its creator only) edits name, description,
-    location and image (JSON, or multipart with an `image`); not the category."""
+    """GET a community. PATCH (its creator only, JSON) edits name, description,
+    location and cover; not the category."""
 
     serializer_class = CommunityDetailSerializer
     permission_classes = [permissions.IsAuthenticated, IsCreatorOrReadOnly]

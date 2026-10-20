@@ -7,6 +7,8 @@ urlpatterns = [
     path('posts/<int:pk>/', views.PostPageView.as_view(), name='post-detail'),
 
     # JSON API
+    path('api/feed/', views.ForYouFeedAPIView.as_view(), name='api-feed'),
+    path('api/feed/communities/', views.SuggestedCommunitiesAPIView.as_view(), name='api-feed-communities'),
     path('api/posts/', views.PostListCreateAPIView.as_view(), name='api-posts'),
     path('api/posts/<int:pk>/', views.PostDetailAPIView.as_view(), name='api-post'),
     path('api/posts/<int:pk>/like/', views.PostLikeAPIView.as_view(), name='api-post-like'),

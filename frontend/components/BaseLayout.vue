@@ -81,9 +81,6 @@
 
         <div v-if="menuOpen" class="account__menu">
           <p class="account__email">{{ user.email }}</p>
-          <a :href="profileUrl" class="account__link">
-            <Icon name="user" :size="16" /> My profile
-          </a>
           <button type="button" class="account__signout" :disabled="signingOut" @click="signOut">
             <Icon name="logout" :size="16" />
             {{ signingOut ? 'Signing out…' : 'Sign out' }}
@@ -155,7 +152,8 @@ const emit = defineEmits(['navigate']);
 
 const tabUrl = (id) => `${props.homeUrl}?tab=${id}`;
 const NAV = [
-  { id: 'discover', label: 'Discover', icon: 'compass', href: props.homeUrl },
+  { id: 'foryou', label: 'For You', icon: 'sparkle', href: props.homeUrl },
+  { id: 'discover', label: 'Discover', icon: 'compass', href: tabUrl('discover') },
   { id: 'communities', label: 'My Communities', icon: 'users', href: tabUrl('communities') },
   { id: 'chats', label: 'Chats', icon: 'chat', href: tabUrl('chats') },
   { id: 'profile', label: 'Profile', icon: 'user', href: props.profileUrl },
@@ -355,26 +353,6 @@ button {
   font-size: 13px;
   color: var(--muted);
   text-overflow: ellipsis;
-}
-
-.account__link {
-  display: flex;
-  text-decoration: none;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  margin-bottom: 6px;
-  padding: 8px 10px;
-  font-weight: 600;
-  color: var(--text);
-  background: var(--surface-muted);
-  border: 0;
-  border-radius: 8px;
-}
-
-.account__link:hover {
-  text-decoration: none;
-  background: var(--primary-soft);
 }
 
 .account__signout {

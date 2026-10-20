@@ -1,25 +1,21 @@
 <!--
-  Edit a community (its creator only): photo, name, location (picked like
-  on Profile, right in this popup), description.
+  Edit a community (its creator only): picture (one of `covers`, the
+  site's drawings for its category), name, location (picked like on
+  Profile, right in this popup), description.
   The category is shown but locked; it can't be changed after creating.
   Emits `saved` with the updated community, `close` to dismiss.
   Usage:
-    <CommunityEditModal v-if="editing" :community="c" :api="communityApi" :map-tile-url="mapTileUrl"
+    <CommunityEditModal v-if="editing" :community="c" :api="communityApi" :covers="communityCovers[c.category]" :map-tile-url="mapTileUrl"
                         :map-search-api="mapSearchApi" :map-reverse-api="mapReverseApi" @saved="..." @close="editing = false" />
 -->
 <template>
   <Modal title="Edit community" wide @close="close">
     <form id="community-edit" class="edit" novalidate @submit.prevent="save">
-      <div class="photo">
-        <img v-if="photoUrl" :src="photoUrl" alt="" class="photo__img" />
-        <span v-else class="photo__img photo__img--initial">{{ (form.name.trim() || community.name).charAt(0).toUpperCase() }}</span>
-        <div class="photo__actions">
-          <ActionButton icon="camera" :label="photoUrl ? 'Change photo' : 'Upload photo'" size="sm" variant="secondary" @click="fileInput.click()" />
-          <ActionButton v-if="photoUrl" icon="trash" label="Remove" size="sm" variant="secondary" @click="removePhoto" />
-          <input ref="fileInput" type="file" accept="image/*" hidden @change="pickImage" />
-        </div>
+      <div class="picture">
+        <span class="picture__label">Picture</span>
+        <CoverPicker v-model="form.cover" :covers="covers" />
+        <p v-if="errors.cover" class="field-error">{{ errors.cover }}</p>
       </div>
-      <p v-if="errors.image" class="field-error">{{ errors.image }}</p>
 
       <FormField id="edit-community-name" v-model="form.name" label="Name" required :error="errors.name" />
 
@@ -63,20 +59,21 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { apiPatch, parseErrors } from '../api.mjs';
 import ActionButton from './ActionButton.vue';
+import CoverPicker from './CoverPicker.vue';
 import FormField from './FormField.vue';
 import Icon from './Icon.vue';
 import LocationField from './LocationField.vue';
 import Modal from './Modal.vue';
 
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-
 // community: see CommunityDetailSerializer; api: PATCH /api/communities/<id>/
 const props = defineProps({
   community: { type: Object, required: true },
   api: { type: String, required: true },
+  // [{ value, label, url }]: the pictures for the community's category.
+  covers: { type: Array, required: true },
   mapTileUrl: { type: String, required: true },
   mapSearchApi: { type: String, required: true },
   mapReverseApi: { type: String, required: true },
@@ -85,53 +82,21 @@ const emit = defineEmits(['saved', 'close']);
 
 const form = reactive({
   name: props.community.name,
+  cover: props.community.cover,
   description: props.community.description,
 });
 const place = ref({ label: props.community.location, lat: props.community.latitude, lng: props.community.longitude });
-const image = ref(null);
-const preview = ref('');
-const removeImage = ref(false);
 const errors = ref({});
 const message = ref('');
 const saving = ref(false);
-const fileInput = ref(null);
 
-const photoUrl = computed(() => preview.value || (removeImage.value ? '' : props.community.image));
 const dirty = computed(() =>
-  image.value || removeImage.value
+  form.cover !== props.community.cover
   || form.name !== props.community.name
   || place.value.label !== props.community.location
   || place.value.lat !== props.community.latitude
   || form.description !== props.community.description
 );
-
-function pickImage(event) {
-  const file = event.target.files[0];
-  event.target.value = '';
-  if (!file) return;
-  if (file.size > MAX_IMAGE_SIZE) {
-    errors.value = { ...errors.value, image: 'Photo must be 5 MB or smaller.' };
-    return;
-  }
-  clearPreview();
-  errors.value = { ...errors.value, image: '' };
-  image.value = file;
-  preview.value = URL.createObjectURL(file);
-  removeImage.value = false;
-}
-
-function removePhoto() {
-  clearPreview();
-  image.value = null;
-  removeImage.value = true;
-}
-
-function clearPreview() {
-  if (preview.value) URL.revokeObjectURL(preview.value);
-  preview.value = '';
-}
-
-onBeforeUnmount(clearPreview);
 
 function close() {
   if (saving.value) return;
@@ -144,14 +109,13 @@ async function save() {
   saving.value = true;
   errors.value = {};
   message.value = '';
-  const data = new FormData();
-  for (const [key, value] of Object.entries(form)) data.append(key, value);
-  data.append('location', place.value.label);
-  // Empty means "no pin" for a nullable number field.
-  data.append('latitude', place.value.lat == null ? '' : place.value.lat.toFixed(6));
-  data.append('longitude', place.value.lng == null ? '' : place.value.lng.toFixed(6));
-  if (image.value) data.append('image', image.value);
-  else if (removeImage.value) data.append('remove_image', 'true');
+  const { lat, lng } = place.value;
+  const data = {
+    ...form,
+    location: place.value.label,
+    latitude: lat == null ? null : +lat.toFixed(6),
+    longitude: lng == null ? null : +lng.toFixed(6),
+  };
   try {
     emit('saved', await apiPatch(props.api, data));
   } catch (err) {
@@ -169,34 +133,15 @@ async function save() {
   padding-bottom: 4px;
 }
 
-.photo {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+.picture {
   margin-bottom: 18px;
 }
 
-.photo__img {
-  flex: none;
-  width: 72px;
-  height: 72px;
-  object-fit: cover;
-  border-radius: 50%;
-}
-
-.photo__img--initial {
-  display: grid;
-  place-items: center;
-  font-size: 28px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, var(--teal), var(--primary));
-}
-
-.photo__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.picture__label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 /* Category: shown like a field, but locked (as the email on Profile). */

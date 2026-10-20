@@ -31,14 +31,13 @@
             <button
               type="button"
               class="photo__btn"
-              :disabled="uploading"
-              :aria-label="me.profile_picture ? 'Change profile photo' : 'Add profile photo'"
-              @click="fileInput.click()"
+              :disabled="savingAvatar"
+              :aria-label="me.avatar ? 'Change avatar' : 'Choose an avatar'"
+              @click="avatarOpen = true"
             >
               <Icon name="camera" :size="16" />
             </button>
-            <input ref="fileInput" type="file" accept="image/*" hidden @change="uploadPhoto" />
-            <span v-if="uploading" class="photo__busy">Uploading…</span>
+            <span v-if="savingAvatar" class="photo__busy">Saving…</span>
           </div>
 
           <div class="hero__info">
@@ -188,29 +187,41 @@
       </div>
       </div>
 
+      <!-- ---------- Choose avatar ---------- -->
+      <Modal v-if="avatarOpen" title="Choose an avatar" @close="avatarOpen = false">
+        <AvatarPicker :model-value="me.avatar" :avatars="avatars" :disabled="savingAvatar" @update:model-value="pickAvatar" />
+        <template #footer>
+          <ActionButton
+            v-if="me.avatar"
+            icon="trash"
+            label="Use my initial"
+            variant="secondary"
+            :disabled="savingAvatar"
+            @click="pickAvatar('')"
+          />
+          <ActionButton icon="check" label="Done" @click="avatarOpen = false" />
+        </template>
+      </Modal>
+
       <!-- ---------- Edit basic info ---------- -->
       <Modal v-if="editOpen" title="Edit profile" @close="editOpen = false">
         <form id="edit-form" @submit.prevent="saveEdit">
           <div class="edit-photo">
-            <img v-if="me.profile_picture" :src="me.profile_picture" alt="" class="edit-photo__img" />
-            <span v-else class="edit-photo__img edit-photo__img--initial">{{ initial }}</span>
-            <div class="edit-photo__actions">
+            <div class="edit-photo__head">
+              <img v-if="me.profile_picture" :src="me.profile_picture" alt="" class="edit-photo__img" />
+              <span v-else class="edit-photo__img edit-photo__img--initial">{{ initial }}</span>
+              <span class="edit-photo__label">Avatar</span>
               <ActionButton
-                icon="camera"
-                :label="me.profile_picture ? 'Change photo' : 'Upload photo'"
-                size="sm"
-                :disabled="uploading"
-                @click="fileInput.click()"
-              />
-              <ActionButton
-                v-if="me.profile_picture"
+                v-if="me.avatar"
                 icon="trash"
-                label="Remove photo"
+                label="Use my initial"
                 size="sm"
-                :disabled="uploading"
-                @click="removePhoto"
+                variant="secondary"
+                :disabled="savingAvatar"
+                @click="pickAvatar('')"
               />
             </div>
+            <AvatarPicker :model-value="me.avatar" :avatars="avatars" :disabled="savingAvatar" @update:model-value="pickAvatar" />
           </div>
 
           <FormField id="edit-name" v-model="form.name" label="Name" placeholder="Your name" :error="formErrors.name" />
@@ -338,6 +349,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { apiGet, apiPatch, parseErrors } from '../../api.mjs';
 import ActionButton from '../../components/ActionButton.vue';
+import AvatarPicker from '../../components/AvatarPicker.vue';
 import BaseLayout from '../../components/BaseLayout.vue';
 import FormField from '../../components/FormField.vue';
 import Icon from '../../components/Icon.vue';
@@ -360,9 +372,10 @@ const props = defineProps({
   mapReverseApi: { type: String, required: true },
   // [{ value, label }]: the community categories; interests are picked from these.
   communityCategories: { type: Array, default: () => [] },
+  // [{ value, label, url }]: the avatars a profile picture is picked from.
+  avatars: { type: Array, default: () => [] },
 });
 
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const GRADIENTS = [
   ['#22b8c9', '#1f6fe5'],
   ['#f59f00', '#e8590c'],
@@ -375,7 +388,7 @@ const GRADIENTS = [
 const me = ref(props.user);
 
 function goHome() {
-  window.location.href = props.homeUrl;
+  window.circleNavigate(props.homeUrl);
 }
 
 // ---------- derived ----------
@@ -421,28 +434,16 @@ async function save(data, { success, onError } = {}) {
   }
 }
 
-// ---------- photo ----------
-const fileInput = ref(null);
-const uploading = ref(false);
+// ---------- avatar ----------
+const avatarOpen = ref(false);
+const savingAvatar = ref(false);
 
-async function uploadPhoto(e) {
-  const file = e.target.files[0];
-  e.target.value = '';
-  if (!file) return;
-  if (!file.type.startsWith('image/')) return notify('Please choose an image file.', 'error');
-  if (file.size > MAX_PHOTO_BYTES) return notify('Profile photo must be 5 MB or smaller.', 'error');
-
-  const data = new FormData();
-  data.append('profile_picture', file);
-  uploading.value = true;
-  await save(data, { success: 'Profile photo updated' });
-  uploading.value = false;
-}
-
-async function removePhoto() {
-  uploading.value = true;
-  await save({ remove_profile_picture: true }, { success: 'Profile photo removed' });
-  uploading.value = false;
+// Saved straight away; '' goes back to the initial.
+async function pickAvatar(key) {
+  if (savingAvatar.value || key === me.value.avatar) return;
+  savingAvatar.value = true;
+  await save({ avatar: key }, { success: key ? 'Avatar updated' : 'Avatar removed' });
+  savingAvatar.value = false;
 }
 
 // ---------- edit basic info ----------
@@ -1271,16 +1272,26 @@ button:disabled {
 
 /* ---------- edit modal ---------- */
 .edit-photo {
+  margin-bottom: 18px;
+}
+
+.edit-photo__head {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 18px;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.edit-photo__label {
+  margin-right: auto;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .edit-photo__img {
   flex: none;
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   object-fit: cover;
   border-radius: 50%;
 }
@@ -1288,16 +1299,10 @@ button:disabled {
 .edit-photo__img--initial {
   display: grid;
   place-items: center;
-  font-size: 26px;
+  font-size: 20px;
   font-weight: 700;
   color: #fff;
   background: linear-gradient(135deg, var(--teal), var(--primary));
-}
-
-.edit-photo__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .hint {

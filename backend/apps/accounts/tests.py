@@ -2,9 +2,7 @@ import tempfile
 from unittest import mock
 
 from django.contrib.auth import get_user_model
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
-from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 from django.urls import reverse
 
 from apps.communities.models import Community
@@ -130,13 +128,6 @@ class GoogleSignInTests(TestCase):
         self.assertContains(self.client.get(reverse('signin')), '"googleClientId": "test-client-id"')
 
 
-# A 1x1 GIF, small enough to upload as a profile picture.
-TINY_GIF = (
-    b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00'
-    b',\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
-)
-
-
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class ProfileTests(TestCase):
     def setUp(self):
@@ -166,7 +157,7 @@ class ProfileTests(TestCase):
         self.assertContains(response, 'pages/home/main.vue')
         self.assertContains(response, '"tab": "chats"')
         response = self.client.get(reverse('home') + '?tab=nope')
-        self.assertContains(response, '"tab": "discover"')
+        self.assertContains(response, '"tab": "foryou"')
 
     def test_update_profile_fields(self):
         response = self.patch({'name': 'Alice A', 'location': 'Pune', 'interested_category': ['tech', 'outdoors']})
@@ -240,17 +231,18 @@ class ProfileTests(TestCase):
         self.assertFalse(self.client.get(url, {'username': 'Bob'}).json()['available'])
         self.assertFalse(self.client.get(url, {'username': 'bad name!'}).json()['available'])
 
-    def test_upload_and_remove_picture(self):
-        picture = SimpleUploadedFile('me.gif', TINY_GIF, content_type='image/gif')
-        response = self.client.patch(
-            reverse('api-me'),
-            encode_multipart(BOUNDARY, {'profile_picture': picture}),
-            content_type=MULTIPART_CONTENT,
-        )
+    def test_pick_and_remove_avatar(self):
+        response = self.patch({'avatar': 'animal-fox'})
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()['profile_picture'])
+        self.assertEqual(response.json()['avatar'], 'animal-fox')
+        self.assertEqual(response.json()['profile_picture'], '/static/avatars/animal-fox.svg')
 
-        response = self.patch({'remove_profile_picture': True})
+        # Only the site's own avatars.
+        response = self.patch({'avatar': 'https://example.com/me.png'})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('avatar', response.json())
+
+        response = self.patch({'avatar': ''})
         self.assertIsNone(response.json()['profile_picture'])
 
     def test_profile_requires_login(self):

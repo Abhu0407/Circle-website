@@ -152,6 +152,58 @@ class CommentTests(TestCase):
         self.assertEqual(self.client.get(reverse('api-posts')).status_code, 403)
 
 
+class ForYouTests(TestCase):
+    def setUp(self):
+        self.sports = Community.objects.create(name='Footy', category=Category.SPORTS)
+        self.music = Community.objects.create(name='Band', category=Category.MUSIC)
+        self.food = Community.objects.create(name='Cooks', category=Category.FOOD)
+        self.alice = User.objects.create_user('alice', 'alice@example.com', 'S3cure-pass!',
+                                              interested_category=['sports'])
+        self.bob = User.objects.create_user('bob', 'bob@example.com', 'S3cure-pass!')
+        self.alice.join_community.add(self.food)
+        self.client.force_login(self.alice)
+
+    def feed(self, seed='s', offset=0):
+        return self.client.get(reverse('api-feed'), {'seed': seed, 'offset': offset}).json()
+
+    def test_feed_has_every_community_but_not_own_posts_and_pages_follow_on(self):
+        for i in range(8):
+            for c in (self.sports, self.music):
+                Post.objects.create(community=c, author=self.bob, body=f'{c.name} {i}')
+        Post.objects.create(community=self.food, author=self.alice, body='mine')
+
+        first = self.feed()
+        self.assertEqual(len(first['results']), 10)
+        self.assertIn('offset=10', first['next'])
+        second = self.client.get(first['next']).json()
+        self.assertIsNone(second['next'])
+        ids = [p['id'] for p in first['results'] + second['results']]
+        self.assertEqual(len(ids), 16)
+        self.assertEqual(len(set(ids)), 16)
+        self.assertNotIn('mine', [p['body'] for p in first['results'] + second['results']])
+        # Same seed, same order.
+        self.assertEqual([p['id'] for p in self.feed()['results']], ids[:10])
+
+    def test_feed_favours_interests(self):
+        for i in range(30):
+            Post.objects.create(community=self.sports, author=self.bob, body='s')
+            Post.objects.create(community=self.music, author=self.bob, body='m')
+        top = [p['community']['category'] for seed in 'abcde' for p in self.feed(seed)['results']]
+        self.assertGreater(top.count('sports'), top.count('music') * 2)
+
+    def test_suggestions_skip_joined_and_rank_interests_first(self):
+        data = self.client.get(reverse('api-feed-communities')).json()
+        self.assertEqual([c['name'] for c in data][0], 'Footy')
+        self.assertNotIn('Cooks', [c['name'] for c in data])
+        self.assertEqual(data[0]['reason'], 'You like Sports')
+        self.assertFalse(data[0]['is_member'])
+
+    def test_home_opens_on_for_you(self):
+        response = self.client.get(reverse('home'))
+        self.assertContains(response, '"tab": "foryou"')
+        self.assertContains(response, reverse('api-feed'))
+
+
 class SeedDemoTests(TestCase):
     def run_seed(self, *args):
         call_command('seed_demo', *args, stdout=StringIO())

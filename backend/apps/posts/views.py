@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 from django.db.models import Count, Exists, F, OuterRef, Q
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
@@ -10,8 +12,11 @@ from rest_framework.views import APIView
 
 from apps.accounts.views import AppPageView
 
+from .feed import ranked_post_ids, suggested_communities
 from .models import Comment, Post
-from .serializers import CommentSerializer, PostSerializer, comment_node, comment_tree
+from .serializers import (
+    CommentSerializer, PostSerializer, SuggestedCommunitySerializer, comment_node, comment_tree,
+)
 
 
 def posts_for(user):
@@ -90,6 +95,48 @@ class PostListCreateAPIView(generics.ListCreateAPIView):
         # Re-read it so the counts are included.
         data = self.get_serializer(posts_for(request.user).get(pk=post.pk)).data
         return Response(data, status=status.HTTP_201_CREATED)
+
+
+class ForYouFeedAPIView(APIView):
+    """GET ?seed=<text>&offset=<n> -> {results, next}: the For You feed.
+    Other people's posts from every community, in a random order that
+    favours the user's interests and activity (see feed.py). The same seed
+    gives the same order, so pages follow on; a new seed reshuffles."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    page_size = 10
+
+    def get(self, request):
+        seed = request.query_params.get('seed', '')[:64] or 'default'
+        offset = request.query_params.get('offset', '')
+        offset = int(offset) if offset.isdigit() else 0
+
+        ids = ranked_post_ids(request.user, seed)
+        page = ids[offset:offset + self.page_size]
+        found = posts_for(request.user).in_bulk(page)
+        posts = [found[pk] for pk in page if pk in found]
+
+        next_url = None
+        if offset + self.page_size < len(ids):
+            next_url = request.build_absolute_uri(
+                f"{reverse('api-feed')}?{urlencode({'seed': seed, 'offset': offset + self.page_size})}"
+            )
+        return Response({
+            'results': PostSerializer(posts, many=True, context={'request': request}).data,
+            'next': next_url,
+        })
+
+
+class SuggestedCommunitiesAPIView(APIView):
+    """GET -> communities to suggest on For You: ones the user hasn't
+    joined, best match first, each with a short `reason`."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    limit = 16
+
+    def get(self, request):
+        communities = suggested_communities(request.user, self.limit)
+        return Response(SuggestedCommunitySerializer(communities, many=True).data)
 
 
 class PostDetailAPIView(generics.RetrieveUpdateDestroyAPIView):

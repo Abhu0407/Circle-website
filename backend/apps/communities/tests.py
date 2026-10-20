@@ -63,6 +63,20 @@ class CommunityTests(TestCase):
         self.assertIn('category', response.json())
         self.assertEqual(Community.objects.get(pk=community_id).category, 'outdoors')
 
+    def test_cover_defaults_to_category_and_can_be_changed(self):
+        data = self.create().json()
+        self.assertEqual(data['cover'], 'outdoors-mountains')
+        self.assertEqual(data['image'], '/static/covers/outdoors-mountains.svg')
+        url = reverse('api-community', args=[data['id']])
+        response = self.client.patch(url, {'cover': 'outdoors-lake'}, content_type='application/json')
+        self.assertEqual((response.json()['cover'], response.json()['image']), ('outdoors-lake', '/static/covers/outdoors-lake.svg'))
+        # Only the category's own pictures.
+        response = self.client.patch(url, {'cover': 'sports-football'}, content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('cover', response.json())
+        self.assertIn('cover', self.create(name='Ballers', cover='tech-code').json())
+        self.assertEqual(self.create(name='Kickers', category='sports', cover='sports-cricket').json()['cover'], 'sports-cricket')
+
     def test_location_point(self):
         response = self.create(location='Pune', latitude=18.5204, longitude=73.8567)
         self.assertEqual((response.json()['latitude'], response.json()['longitude']), (18.5204, 73.8567))

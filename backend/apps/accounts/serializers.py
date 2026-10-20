@@ -13,9 +13,15 @@ from rest_framework import serializers
 from apps.communities.models import Category, Community
 from apps.communities.serializers import CommunitySerializer
 
+from .models import AVATARS, avatar_url
+
 User = get_user_model()
 
-MAX_PROFILE_PICTURE_SIZE = 5 * 1024 * 1024
+
+
+def avatar_choices():
+    """[{value, label, url}] for the avatar picker."""
+    return [{'value': key, 'label': label, 'url': avatar_url(key)} for key, label in AVATARS]
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -26,7 +32,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'username', 'name', 'email', 'first_name', 'last_name',
             'interested_category', 'join_community', 'location', 'latitude', 'longitude',
-            'profile_picture',
+            'avatar', 'profile_picture',
         )
 
 
@@ -34,10 +40,14 @@ class ProfileSerializer(serializers.ModelSerializer):
     """What a signed-in user may change about themselves.
 
     The email is read-only. A new username must not be taken by anyone else
-    (compared case-insensitively, like sign in does).
+    (compared case-insensitively, like sign in does). `avatar` is a key from
+    AVATARS, or "" to go back to the initial.
     """
 
-    remove_profile_picture = serializers.BooleanField(write_only=True, required=False, default=False)
+    avatar = serializers.ChoiceField(
+        choices=AVATARS, allow_blank=True, required=False,
+        error_messages={'invalid_choice': 'Pick one of the avatars.'},
+    )
     # Interests are community categories (keys such as "sports").
     interested_category = serializers.ListField(
         child=serializers.ChoiceField(
@@ -55,8 +65,7 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             'id', 'username', 'name', 'email', 'location', 'latitude', 'longitude',
-            'interested_category', 'join_community',
-            'profile_picture', 'remove_profile_picture',
+            'interested_category', 'join_community', 'avatar',
         )
         read_only_fields = ('id', 'email')
         # Replace the default case-sensitive unique check with validate_username.
@@ -78,20 +87,6 @@ class ProfileSerializer(serializers.ModelSerializer):
         if (lat is ...) != (lng is ...) or (lat is None) != (lng is None):
             raise serializers.ValidationError({'location': 'Send latitude and longitude together.'})
         return attrs
-
-    def validate_profile_picture(self, value):
-        if value and value.size > MAX_PROFILE_PICTURE_SIZE:
-            raise serializers.ValidationError('Profile picture must be 5 MB or smaller.')
-        return value
-
-    def update(self, instance, validated_data):
-        remove = validated_data.pop('remove_profile_picture', False)
-        new_picture = validated_data.get('profile_picture')
-        if (remove or new_picture) and instance.profile_picture:
-            instance.profile_picture.delete(save=False)
-        if remove and not new_picture:
-            validated_data['profile_picture'] = None
-        return super().update(instance, validated_data)
 
 
 class SignUpSerializer(serializers.ModelSerializer):

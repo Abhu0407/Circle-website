@@ -1,12 +1,13 @@
 <!--
   Create a community (inside the page's PageSheet). The header previews the
-  community as you type; the photo is used as its cover and picture.
+  community as you type; its picture (cover and round picture) is one of the
+  site's drawings for the chosen category (`covers`), changeable later.
   The creator joins it, and the browser goes to the new community's page.
   The category is picked from `categories` (required, can't be changed later).
   The location is picked like on Profile (search or click the map).
   Usage:
-    <CommunityForm :communities-api="communitiesApi" :categories="communityCategories" :user="user"
-                   :map-tile-url="mapTileUrl" :map-search-api="mapSearchApi" :map-reverse-api="mapReverseApi" />
+    <CommunityForm :communities-api="communitiesApi" :categories="communityCategories" :covers="communityCovers"
+                   :user="user" :map-tile-url="mapTileUrl" :map-search-api="mapSearchApi" :map-reverse-api="mapReverseApi" />
 -->
 <template>
   <form class="cform" novalidate @submit.prevent="submit">
@@ -14,33 +15,15 @@
     <PageHero
       :name="form.name.trim() || 'Community name'"
       :placeholder="!form.name.trim()"
-      :cover="preview"
+      :cover="coverUrl"
+      :picture="coverUrl"
+      :initial="initial"
     >
-      <template #picture>
-        <img v-if="preview" :src="preview" alt="" class="pic" />
-        <span v-else class="pic pic--initial">{{ initial }}</span>
-        <button
-          type="button"
-          class="pic__btn"
-          :aria-label="preview ? 'Change photo' : 'Add photo'"
-          :title="preview ? 'Change photo' : 'Add photo'"
-          @click="fileInput.click()"
-        >
-          <Icon name="camera" :size="16" />
-        </button>
-        <input ref="fileInput" type="file" accept="image/*" hidden @change="pickImage" />
-      </template>
-
       <template #meta>
         <span><Icon name="compass" :size="14" /> {{ categoryLabel || 'No category yet' }}</span>
         <span><Icon name="pin" :size="14" /> {{ place.label || 'No location' }}</span>
       </template>
-
-      <template v-if="preview" #actions>
-        <ActionButton icon="trash" label="Remove photo" size="sm" variant="secondary" compact @click="clearImage" />
-      </template>
     </PageHero>
-    <p v-if="errors.image" class="error">{{ errors.image }}</p>
 
     <CardGrid>
       <!-- ---------- Basic info ---------- -->
@@ -53,7 +36,7 @@
               v-for="c in categories"
               :key="c.value"
               :on="form.category === c.value"
-              @click="form.category = c.value"
+              @click="pickCategory(c.value)"
             >{{ c.label }}</FilterChip>
           </div>
           <p v-if="errors.category" class="category__error">{{ errors.category }}</p>
@@ -82,6 +65,13 @@
           <p v-if="errors.description" class="area__error">{{ errors.description }}</p>
         </div>
       </SectionCard>
+
+      <!-- ---------- Picture ---------- -->
+      <SectionCard title="Picture" wide>
+        <CoverPicker v-if="categoryCovers.length" v-model="form.cover" :covers="categoryCovers" />
+        <p v-else class="hint">Pick a category to see its pictures.</p>
+        <p v-if="errors.cover" class="area__error">{{ errors.cover }}</p>
+      </SectionCard>
     </CardGrid>
 
     <p v-if="message" class="error" role="alert">{{ message }}</p>
@@ -99,10 +89,11 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { apiPost, parseErrors } from '../api.mjs';
 import ActionButton from './ActionButton.vue';
 import CardGrid from './CardGrid.vue';
+import CoverPicker from './CoverPicker.vue';
 import FilterChip from './FilterChip.vue';
 import FormField from './FormField.vue';
 import Icon from './Icon.vue';
@@ -110,68 +101,52 @@ import LocationField from './LocationField.vue';
 import PageHero from './PageHero.vue';
 import SectionCard from './SectionCard.vue';
 
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-
 const props = defineProps({
   communitiesApi: { type: String, required: true },
   // [{ value, label }] from the server; the last one is "Other".
   categories: { type: Array, required: true },
+  // { category: [{ value, label, url }] } from the server; the first is the default.
+  covers: { type: Object, required: true },
   mapTileUrl: { type: String, required: true },
   mapSearchApi: { type: String, required: true },
   mapReverseApi: { type: String, required: true },
   user: { type: Object, required: true },
 });
 
-const form = reactive({ name: '', category: '', description: '' });
+const form = reactive({ name: '', category: '', cover: '', description: '' });
 // Starts at your own location from Profile.
 const place = ref({ label: props.user.location || '', lat: props.user.latitude ?? null, lng: props.user.longitude ?? null });
-const image = ref(null);
-const preview = ref('');
 const errors = ref({});
 const message = ref('');
 const saving = ref(false);
-const fileInput = ref(null);
 
 const categoryLabel = computed(() => (props.categories.find((c) => c.value === form.category) || {}).label);
 const initial = computed(() => (form.name.trim().charAt(0) || '?').toUpperCase());
+const categoryCovers = computed(() => props.covers[form.category] || []);
+const coverUrl = computed(() => (categoryCovers.value.find((c) => c.value === form.cover) || {}).url || '');
 
-function pickImage(event) {
-  const file = event.target.files[0];
-  event.target.value = '';
-  if (!file) return;
-  if (file.size > MAX_IMAGE_SIZE) {
-    errors.value = { ...errors.value, image: 'Photo must be 5 MB or smaller.' };
-    return;
-  }
-  clearImage();
-  errors.value = { ...errors.value, image: '' };
-  image.value = file;
-  preview.value = URL.createObjectURL(file);
+// Each category has its own pictures; start on its first one.
+function pickCategory(value) {
+  if (form.category === value) return;
+  form.category = value;
+  form.cover = (categoryCovers.value[0] || {}).value || '';
 }
-
-function clearImage() {
-  if (preview.value) URL.revokeObjectURL(preview.value);
-  image.value = null;
-  preview.value = '';
-}
-
-onBeforeUnmount(clearImage);
 
 async function submit() {
   if (saving.value) return;
   saving.value = true;
   errors.value = {};
   message.value = '';
-  const data = new FormData();
-  for (const [key, value] of Object.entries(form)) data.append(key, value);
-  data.append('location', place.value.label);
-  // Empty means "no pin" for a nullable number field.
-  data.append('latitude', place.value.lat == null ? '' : place.value.lat.toFixed(6));
-  data.append('longitude', place.value.lng == null ? '' : place.value.lng.toFixed(6));
-  if (image.value) data.append('image', image.value);
+  const { lat, lng } = place.value;
+  const data = {
+    ...form,
+    location: place.value.label,
+    latitude: lat == null ? null : +lat.toFixed(6),
+    longitude: lng == null ? null : +lng.toFixed(6),
+  };
   try {
     const community = await apiPost(props.communitiesApi, data);
-    window.location.href = community.url;
+    window.circleNavigate(community.url);
   } catch (err) {
     const { fieldErrors, message: text } = parseErrors(err);
     errors.value = fieldErrors;
@@ -186,45 +161,6 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: 20px;
-}
-
-/* ---------- picture (same as Profile's photo) ---------- */
-.pic {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  background: var(--surface-muted);
-  border: 4px solid var(--surface);
-  border-radius: 50%;
-  box-shadow: 0 6px 16px rgba(8, 19, 31, 0.18);
-}
-
-.pic--initial {
-  display: grid;
-  place-items: center;
-  font-size: 40px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, var(--teal), var(--primary));
-}
-
-.pic__btn {
-  position: absolute;
-  right: 2px;
-  bottom: 2px;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  color: #fff;
-  background: var(--night-700);
-  border: 3px solid var(--surface);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.pic__btn:hover {
-  background: var(--primary);
 }
 
 /* ---------- fields ---------- */
@@ -303,6 +239,12 @@ async function submit() {
 
 .area--error textarea {
   border-color: var(--danger);
+}
+
+.hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
 }
 
 .area__error {

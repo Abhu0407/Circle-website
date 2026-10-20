@@ -13,10 +13,10 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.communities.serializers import category_choices
+from apps.communities.serializers import category_choices, cover_choices
 
 from .serializers import (
-    GoogleSignInSerializer, ProfileSerializer, SignInSerializer, SignUpSerializer, UserSerializer,
+    GoogleSignInSerializer, ProfileSerializer, SignInSerializer, SignUpSerializer, UserSerializer, avatar_choices,
     username_taken,
 )
 
@@ -134,6 +134,8 @@ class AppPageView(LoginRequiredMixin, VuePageView):
             'mapPeople': map_people(exclude=self.request.user),
             # [{value, label}]: community categories, also used as interests.
             'communityCategories': category_choices(),
+            # {category: [{value, label, url}]}: pictures a community can pick.
+            'communityCovers': cover_choices(),
             # Place search for location pickers.
             'mapSearchApi': reverse('api-map-search'),
             'mapReverseApi': reverse('api-map-reverse'),
@@ -141,19 +143,23 @@ class AppPageView(LoginRequiredMixin, VuePageView):
 
 
 class HomePageView(AppPageView):
-    """Discover, plus the sections still to be built. /?tab=chats opens
-    on that section; the page switches sections without reloading."""
+    """For You (the default), Discover, My Communities and the sections
+    still to be built. /?tab=discover opens on that section; the page
+    switches sections without reloading."""
 
     vue_component = 'pages/home/main.vue'
     page_title = 'Home'
-    tabs = ('discover', 'communities', 'chats', 'create')
+    tabs = ('foryou', 'discover', 'communities', 'chats', 'create')
 
     def get_page_props(self):
         tab = self.request.GET.get('tab', '')
         return {
             **super().get_page_props(),
-            'tab': tab if tab in self.tabs else 'discover',
-            # Posts feed on the My Communities tab.
+            'tab': tab if tab in self.tabs else 'foryou',
+            # For You: the shuffled feed and the communities to suggest.
+            'feedApi': reverse('api-feed'),
+            'suggestionsApi': reverse('api-feed-communities'),
+            # Posts feed on the My Communities tab (also likes, comments...).
             'postsApi': reverse('api-posts'),
             # Create Community tab.
             'communitiesApi': reverse('api-communities'),
@@ -169,6 +175,8 @@ class ProfilePageView(AppPageView):
             **super().get_page_props(),
             'meApi': reverse('api-me'),
             'usernameCheckApi': reverse('api-username-check'),
+            # [{value, label, url}]: avatars to pick a profile picture from.
+            'avatars': avatar_choices(),
         }
 
 
@@ -227,7 +235,7 @@ class MeAPIView(APIView):
         return Response(UserSerializer(request.user).data)
 
     def patch(self, request):
-        """Update the profile. Accepts JSON, or multipart when a picture is sent."""
+        """Update the profile (JSON)."""
         serializer = ProfileSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()

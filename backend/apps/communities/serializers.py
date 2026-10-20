@@ -2,9 +2,8 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import serializers
 
-from .models import Category, Community
+from .models import Category, Community, cover_url, covers_for
 
-MAX_COMMUNITY_IMAGE_SIZE = 5 * 1024 * 1024
 # Members shown on the community page (the rest are just counted).
 MEMBERS_PREVIEW = 12
 
@@ -14,10 +13,21 @@ def category_choices():
     return [{'value': value, 'label': label} for value, label in Category.choices]
 
 
+def cover_choices():
+    """{category: [{value, label, url}]} for the cover picker."""
+    return {
+        category: [{'value': key, 'label': label, 'url': cover_url(key)} for key, label in covers_for(category)]
+        for category in Category.values
+    }
+
+
 class CommunitySerializer(serializers.ModelSerializer):
-    """`category` is the key (e.g. "sports"); show `category_label`."""
+    """`category` is the key (e.g. "sports"); show `category_label`.
+    `cover` is the key of its picture (see models.COVERS); `image` is its URL."""
 
     category_label = serializers.CharField(source='get_category_display', read_only=True)
+    cover = serializers.CharField(source='cover_key', read_only=True)
+    image = serializers.CharField(source='cover_url', read_only=True)
     members_count = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
 
@@ -25,7 +35,7 @@ class CommunitySerializer(serializers.ModelSerializer):
         model = Community
         fields = (
             'id', 'name', 'description', 'category', 'category_label', 'location', 'latitude', 'longitude',
-            'image', 'members_count', 'url',
+            'cover', 'image', 'members_count', 'url',
         )
 
     def get_members_count(self, obj):
@@ -58,14 +68,15 @@ class CommunityDetailSerializer(CommunitySerializer):
     (the creator joins it straight away) and to edit it.
 
     The category must be one of `Category` and is required when creating;
-    after that it can't be changed. Everything else can be edited.
+    after that it can't be changed. Everything else can be edited, including
+    the `cover`, which must be one of the category's (default: its first).
     """
 
     category = serializers.ChoiceField(
         choices=Category.choices,
         error_messages={'required': 'Pick a category.', 'invalid_choice': 'Pick one of the listed categories.'},
     )
-    remove_image = serializers.BooleanField(write_only=True, required=False, default=False)
+    cover = serializers.CharField(required=False)
 
     created_by = MemberSerializer(read_only=True)
     members = serializers.SerializerMethodField()
@@ -76,7 +87,6 @@ class CommunityDetailSerializer(CommunitySerializer):
     class Meta(CommunitySerializer.Meta):
         fields = CommunitySerializer.Meta.fields + (
             'created_by', 'created_at', 'members', 'posts_count', 'is_member', 'is_creator',
-            'remove_image',
         )
         read_only_fields = ('created_at',)
 
@@ -120,25 +130,19 @@ class CommunityDetailSerializer(CommunitySerializer):
         lat, lng = attrs.get('latitude', ...), attrs.get('longitude', ...)
         if (lat is ...) != (lng is ...) or (lat is None) != (lng is None):
             raise serializers.ValidationError({'location': 'Send latitude and longitude together.'})
+        category = attrs.get('category') or self.instance.category
+        cover = attrs.get('cover')
+        if cover is not None and cover not in [key for key, _ in covers_for(category)]:
+            raise serializers.ValidationError({'cover': 'Pick one of the pictures for this category.'})
         return attrs
 
-    def validate_image(self, value):
-        if value and value.size > MAX_COMMUNITY_IMAGE_SIZE:
-            raise serializers.ValidationError('Photo must be 5 MB or smaller.')
-        return value
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['cover'] = instance.cover_key
+        return data
 
     def create(self, validated_data):
-        validated_data.pop('remove_image', None)
         user = self._user()
         community = super().create({**validated_data, 'created_by': user})
         community.members.add(user)
         return community
-
-    def update(self, instance, validated_data):
-        remove = validated_data.pop('remove_image', False)
-        new_image = validated_data.get('image')
-        if (remove or new_image) and instance.image:
-            instance.image.delete(save=False)
-        if remove and not new_image:
-            validated_data['image'] = None
-        return super().update(instance, validated_data)

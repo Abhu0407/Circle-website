@@ -18,6 +18,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.models import AVATARS
 from apps.communities.models import Category, Community
 from apps.posts.models import Comment, Post
 
@@ -235,9 +236,6 @@ class Command(BaseCommand):
     def clear(self, demo_users):
         communities = Community.objects.filter(created_by__in=demo_users)
         n_communities = communities.count()
-        for community in communities:
-            if community.image:
-                community.image.delete(save=False)
         communities.delete()
         n_users = demo_users.count()
         demo_users.delete()
@@ -256,12 +254,13 @@ class Command(BaseCommand):
         now = timezone.now()
 
         users = []
-        for username, name, place, interests in USERS:
+        for i, (username, name, place, interests) in enumerate(USERS):
             label, lat, lng = PLACES[place]
             user = User(
                 username=username, email=f'{username}@{DEMO_DOMAIN}', name=name,
                 first_name=name.split()[0], last_name=name.split()[-1],
                 location=label, latitude=lat, longitude=lng, interested_category=interests,
+                avatar=AVATARS[i % len(AVATARS)][0],
             )
             user.set_password(DEMO_PASSWORD)
             user.save()

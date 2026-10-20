@@ -17,25 +17,31 @@
           <span><Icon name="compass" :size="14" /> {{ c.category_label }}</span>
           <span v-if="c.location"><Icon name="pin" :size="14" /> {{ c.location }}</span>
           <span v-if="c.is_creator" class="badge badge--owner">You created this</span>
-          <span v-else-if="c.is_member" class="badge badge--member"><Icon name="check" :size="12" /> Member</span>
+          <span v-else-if="c.is_member" class="badge badge--member">Member</span>
         </template>
 
         <template #actions>
-          <ActionButton v-if="c.is_creator && !confirmLeave" icon="edit" label="Edit community" size="sm" compact @click="editing = true" />
-          <template v-if="confirmLeave">
-            <ActionButton icon="logout" label="Leave" size="sm" :disabled="busy" @click="setMember(false)" />
-            <ActionButton icon="close" label="Cancel" size="sm" variant="secondary" @click="confirmLeave = false" />
-          </template>
-          <ActionButton v-else-if="c.is_member" icon="check" label="Joined" size="sm" variant="secondary" :disabled="busy" @click="confirmLeave = true" />
+          <!-- Joined is only a status box; leaving is done with the button beside the description. -->
+          <span v-if="c.is_member" class="joined">Joined</span>
           <ActionButton v-else icon="userPlus" :label="busy ? 'Joining…' : 'Join community'" size="sm" :disabled="busy" @click="setMember(true)" />
         </template>
 
         <template #about>
-          <p v-if="c.description" class="description">{{ c.description }}</p>
-          <p v-else class="description description--empty">
-            No description yet.
-            <button v-if="c.is_creator" type="button" class="description__add" @click="editing = true">Add one</button>
-          </p>
+          <div class="about">
+            <p v-if="c.description" class="description">{{ c.description }}</p>
+            <p v-else class="description description--empty">
+              No description yet.
+              <button v-if="c.is_creator" type="button" class="description__add" @click="editing = true">Add one</button>
+            </p>
+
+            <div v-if="c.is_member" class="about__leave">
+              <template v-if="confirmLeave">
+                <ActionButton icon="logout" :label="busy ? 'Leaving…' : 'Yes, leave'" size="sm" :disabled="busy" @click="setMember(false)" />
+                <ActionButton icon="close" label="Cancel" size="sm" variant="secondary" @click="confirmLeave = false" />
+              </template>
+              <ActionButton v-else icon="logout" label="Leave" size="sm" variant="secondary" @click="confirmLeave = true" />
+            </div>
+          </div>
         </template>
 
         <template #stats>
@@ -132,6 +138,7 @@
       v-if="editing"
       :community="c"
       :api="communityApi"
+      :covers="communityCovers[c.category] || []"
       :map-tile-url="mapTileUrl"
       :map-search-api="mapSearchApi"
       :map-reverse-api="mapReverseApi"
@@ -179,6 +186,8 @@ const props = defineProps({
   mapPeople: { type: Array, default: () => [] },
   mapSearchApi: { type: String, required: true },
   mapReverseApi: { type: String, required: true },
+  // { category: [{ value, label, url }] }: pictures a community can pick.
+  communityCovers: { type: Object, default: () => ({}) },
   // Other members' pins: [{ id, username, lat, lng }]
   memberPoints: { type: Array, default: () => [] },
 });
@@ -277,8 +286,38 @@ async function setMember(join) {
   grid-column: 1 / -1;
 }
 
-/* ---------- description (in the header) ---------- */
+/* Status box in the header actions (not a button). */
+.joined {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green-dark);
+  background: var(--green-soft);
+  border-radius: 10px;
+  cursor: default;
+  user-select: none;
+}
+
+/* ---------- description (in the header) + Leave on its right ---------- */
+.about {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.about__leave {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
 .description {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   padding: 14px 16px;
   line-height: 1.6;
@@ -437,6 +476,10 @@ async function setMember(join) {
 }
 
 @media (max-width: 560px) {
+  .about {
+    flex-direction: column;
+    align-items: stretch;
+  }
   .info__row {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;

@@ -12,7 +12,19 @@
     :events="events"
     @navigate="go"
   >
-    <PageSheet v-if="active === 'discover'" title="Discover Communities">
+    <PageSheet v-if="active === 'foryou'" title="For You">
+      <ForYouFeed
+        :feed-api="feedApi"
+        :suggestions-api="suggestionsApi"
+        :posts-api="postsApi"
+        :communities-api="communitiesApi"
+        :user="me"
+        @joined="onJoined"
+        @navigate="go"
+      />
+    </PageSheet>
+
+    <PageSheet v-else-if="active === 'discover'" title="Discover Communities">
       <DiscoverCommunities
         :communities-api="communitiesApi"
         :categories="communityCategories"
@@ -31,6 +43,7 @@
       <CommunityForm
         :communities-api="communitiesApi"
         :categories="communityCategories"
+        :covers="communityCovers"
         :user="me"
         :map-tile-url="mapTileUrl"
         :map-search-api="mapSearchApi"
@@ -40,7 +53,7 @@
 
     <PageSheet v-else :title="activeLabel">
       <EmptyState :icon="activeIcon" :text="`${activeLabel} is coming soon.`">
-        <ActionButton icon="back" label="Back to Discover" @click="go('discover')" />
+        <ActionButton icon="back" label="Back to For You" @click="go('foryou')" />
       </EmptyState>
     </PageSheet>
   </BaseLayout>
@@ -53,6 +66,7 @@ import BaseLayout from '../../components/BaseLayout.vue';
 import CommunityForm from '../../components/CommunityForm.vue';
 import DiscoverCommunities from '../../components/DiscoverCommunities.vue';
 import EmptyState from '../../components/EmptyState.vue';
+import ForYouFeed from '../../components/ForYouFeed.vue';
 import MyCommunities from '../../components/MyCommunities.vue';
 import PageSheet from '../../components/PageSheet.vue';
 
@@ -60,14 +74,17 @@ import PageSheet from '../../components/PageSheet.vue';
 // events: [{ id, title, time, color }]
 const props = defineProps({
   user: { type: Object, required: true },
-  tab: { type: String, default: 'discover' },
+  tab: { type: String, default: 'foryou' },
   homeUrl: { type: String, required: true },
   profileUrl: { type: String, required: true },
   signoutApi: { type: String, required: true },
   signinUrl: { type: String, required: true },
+  feedApi: { type: String, required: true },
+  suggestionsApi: { type: String, required: true },
   postsApi: { type: String, required: true },
   communitiesApi: { type: String, required: true },
   communityCategories: { type: Array, default: () => [] },
+  communityCovers: { type: Object, default: () => ({}) },
   mapSearchApi: { type: String, required: true },
   mapReverseApi: { type: String, required: true },
   mapTileUrl: { type: String, required: true },
@@ -77,11 +94,12 @@ const props = defineProps({
 
 // Sections of this page; switching between them doesn't reload.
 const TABS = {
+  discover: { label: 'Discover', icon: 'compass' },
   communities: { label: 'My Communities', icon: 'users' },
   chats: { label: 'Chats', icon: 'chat' },
   create: { label: 'Create Community', icon: 'plus' },
 };
-const LOCAL_TABS = ['discover', ...Object.keys(TABS)];
+const LOCAL_TABS = ['foryou', ...Object.keys(TABS)];
 
 const active = ref(props.tab);
 // The signed-in user; joining from Discover adds to `join_community` here,
@@ -94,13 +112,13 @@ const activeIcon = computed(() => (TABS[active.value] || {}).icon);
 // Switch section and keep the address bar in step (/?tab=chats can be bookmarked).
 function go(tab) {
   active.value = tab;
-  const url = tab === 'discover' ? props.homeUrl : `${props.homeUrl}?tab=${tab}`;
+  const url = tab === 'foryou' ? props.homeUrl : `${props.homeUrl}?tab=${tab}`;
   if (url !== window.location.pathname + window.location.search) history.pushState({ tab }, '', url);
 }
 
 function onPopState() {
   const tab = new URLSearchParams(window.location.search).get('tab');
-  active.value = TABS[tab] ? tab : 'discover';
+  active.value = TABS[tab] ? tab : 'foryou';
 }
 
 onMounted(() => window.addEventListener('popstate', onPopState));

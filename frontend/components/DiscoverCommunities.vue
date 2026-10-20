@@ -222,7 +222,7 @@ async function join(community) {
 }
 
 function open(community) {
-  window.location.href = community.url;
+  window.circleNavigate(community.url);
 }
 
 const formatKm = (km) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km < 10 ? km.toFixed(1) : Math.round(km)} km`);
