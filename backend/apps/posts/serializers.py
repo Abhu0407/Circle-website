@@ -1,7 +1,11 @@
+from pathlib import Path
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import serializers
 
+from apps.chat.attachments import VIDEO_TYPES, looks_like_video, read_head
 from apps.communities.models import Community
 from apps.communities.serializers import DiscoverCommunitySerializer
 
@@ -10,6 +14,16 @@ from .models import Comment, Post
 User = get_user_model()
 
 MAX_POST_IMAGE_SIZE = 5 * 1024 * 1024
+
+
+class PostVideoField(serializers.FileField):
+    """Upload: the video file. Output: the URL that plays it (PostVideoView,
+    which lets the player skip ahead)."""
+
+    def to_representation(self, value):
+        if not value:
+            return None
+        return reverse('api-post-video', args=[value.instance.pk])
 
 
 class AuthorSerializer(serializers.ModelSerializer):
@@ -49,11 +63,13 @@ class PostSerializer(serializers.ModelSerializer):
     is_author = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
     remove_image = serializers.BooleanField(write_only=True, required=False, default=False)
+    video = PostVideoField(required=False, allow_null=True)
+    remove_video = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model = Post
         fields = (
-            'id', 'community', 'community_id', 'author', 'body', 'image', 'remove_image',
+            'id', 'community', 'community_id', 'author', 'body', 'image', 'remove_image', 'video', 'remove_video',
             'likes_count', 'comments_count', 'shares_count', 'liked', 'is_author', 'url',
             'created_at', 'updated_at',
         )
@@ -79,7 +95,20 @@ class PostSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Photo must be 5 MB or smaller.')
         return value
 
+    def validate_video(self, value):
+        if not value:
+            return value
+        ext = Path(value.name).suffix.lower()
+        if ext not in VIDEO_TYPES or not looks_like_video(ext, read_head(value)):
+            raise serializers.ValidationError('Use an MP4, MOV, WebM or OGV video.')
+        if value.size > settings.POST_MAX_VIDEO_MB * 1024 * 1024:
+            raise serializers.ValidationError(f'Video must be {settings.POST_MAX_VIDEO_MB} MB or smaller.')
+        value.video_type = VIDEO_TYPES[ext]
+        return value
+
     def validate(self, attrs):
+        if attrs.get('image') and attrs.get('video'):
+            raise serializers.ValidationError({'video': 'A post can have a photo or a video, not both.'})
         if self.instance is None:
             user = self.context['request'].user
             if not user.join_community.filter(pk=attrs['community'].pk).exists():
@@ -93,21 +122,41 @@ class PostSerializer(serializers.ModelSerializer):
         has_image = attrs.get('image') or (
             self.instance is not None and self.instance.image and not attrs.get('remove_image')
         )
-        if not body and not has_image:
-            raise serializers.ValidationError({'body': 'Write something or add a photo.'})
+        has_video = attrs.get('video') or (
+            self.instance is not None and self.instance.video and not attrs.get('remove_video')
+        )
+        if not body and not has_image and not has_video:
+            raise serializers.ValidationError({'body': 'Write something or add a photo or video.'})
         return attrs
+
+    @staticmethod
+    def _set_video_type(validated_data):
+        video = validated_data.get('video')
+        if video:
+            validated_data['video_type'] = video.video_type
 
     def create(self, validated_data):
         validated_data.pop('remove_image', None)
+        validated_data.pop('remove_video', None)
+        self._set_video_type(validated_data)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        remove = validated_data.pop('remove_image', False)
         new_image = validated_data.get('image')
-        if (remove or new_image) and instance.image:
+        new_video = validated_data.get('video')
+        # A new photo replaces a video and the other way round.
+        remove_image = validated_data.pop('remove_image', False) or bool(new_video)
+        remove_video = validated_data.pop('remove_video', False) or bool(new_image)
+        if (remove_image or new_image) and instance.image:
             instance.image.delete(save=False)
-        if remove and not new_image:
+        if remove_image and not new_image:
             validated_data['image'] = None
+        if (remove_video or new_video) and instance.video:
+            instance.video.delete(save=False)
+        if remove_video and not new_video:
+            validated_data['video'] = None
+            validated_data['video_type'] = ''
+        self._set_video_type(validated_data)
         return super().update(instance, validated_data)
 
 

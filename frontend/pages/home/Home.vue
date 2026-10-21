@@ -8,6 +8,9 @@
     :signout-api="signoutApi"
     :signin-url="signinUrl"
     :map-tile-url="mapTileUrl"
+    :chats-api="chatsApi"
+    :chat-socket-path="chatSocketPath"
+    :chat-max-file-mb="chatMaxFileMb"
     :map-people="mapPeople"
     :events="events"
     @navigate="go"
@@ -39,6 +42,11 @@
       <MyCommunities :posts-api="postsApi" :user="me" @navigate="go" />
     </PageSheet>
 
+    <PageSheet v-else-if="active === 'chats'" title="Chats">
+      <ChatRoom v-if="chatId" :key="chatId" :community-id="chatId" :user="me" @back="go('chats')" />
+      <ChatList v-else :user="me" @open="openChat" @navigate="go" />
+    </PageSheet>
+
     <PageSheet v-else-if="active === 'create'" title="Create a Community">
       <CommunityForm
         :communities-api="communitiesApi"
@@ -63,6 +71,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import ActionButton from '../../components/ActionButton.vue';
 import BaseLayout from '../../components/BaseLayout.vue';
+import ChatList from '../../components/ChatList.vue';
+import ChatRoom from '../../components/ChatRoom.vue';
 import CommunityForm from '../../components/CommunityForm.vue';
 import DiscoverCommunities from '../../components/DiscoverCommunities.vue';
 import EmptyState from '../../components/EmptyState.vue';
@@ -88,6 +98,9 @@ const props = defineProps({
   mapSearchApi: { type: String, required: true },
   mapReverseApi: { type: String, required: true },
   mapTileUrl: { type: String, required: true },
+  chatsApi: { type: String, default: '' },
+  chatSocketPath: { type: String, default: '' },
+  chatMaxFileMb: { type: Number, default: 25 },
   mapPeople: { type: Array, default: () => [] },
   events: { type: Array, default: () => [] },
 });
@@ -102,6 +115,9 @@ const TABS = {
 const LOCAL_TABS = ['foryou', ...Object.keys(TABS)];
 
 const active = ref(props.tab);
+// Chats tab: the community whose chat is open (/?tab=chats&community=3), or null for the list.
+const chatIdFromUrl = () => Number(new URLSearchParams(window.location.search).get('community')) || null;
+const chatId = ref(props.tab === 'chats' ? chatIdFromUrl() : null);
 // The signed-in user; joining from Discover adds to `join_community` here,
 // so My Communities shows it without a reload.
 const me = ref(props.user);
@@ -112,13 +128,20 @@ const activeIcon = computed(() => (TABS[active.value] || {}).icon);
 // Switch section and keep the address bar in step (/?tab=chats can be bookmarked).
 function go(tab) {
   active.value = tab;
+  chatId.value = null;
   const url = tab === 'foryou' ? props.homeUrl : `${props.homeUrl}?tab=${tab}`;
   if (url !== window.location.pathname + window.location.search) history.pushState({ tab }, '', url);
+}
+
+function openChat(id) {
+  chatId.value = id;
+  history.pushState({ tab: 'chats' }, '', `${props.homeUrl}?tab=chats&community=${id}`);
 }
 
 function onPopState() {
   const tab = new URLSearchParams(window.location.search).get('tab');
   active.value = TABS[tab] ? tab : 'foryou';
+  chatId.value = active.value === 'chats' ? chatIdFromUrl() : null;
 }
 
 onMounted(() => window.addEventListener('popstate', onPopState));

@@ -1,8 +1,20 @@
+import uuid
+from pathlib import Path
+
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 MAX_POST_LENGTH = 5000
 MAX_COMMENT_LENGTH = 2000
+
+
+def post_video_path(post, filename):
+    """post_videos/<random>.<ext>; .mov is stored as .mp4 (it is H.264 inside,
+    which browsers play as MP4)."""
+    ext = Path(filename).suffix.lower()
+    return f'post_videos/{uuid.uuid4().hex}{".mp4" if ext == ".mov" else ext}'
 
 
 class Post(models.Model):
@@ -18,6 +30,9 @@ class Post(models.Model):
     )
     body = models.TextField(max_length=MAX_POST_LENGTH, blank=True)
     image = models.ImageField(upload_to='post_images/', blank=True, null=True)
+    # A post has a photo or a video (or neither), not both.
+    video = models.FileField(upload_to=post_video_path, blank=True, null=True)
+    video_type = models.CharField(max_length=50, blank=True)  # MIME type it is served with
     likes = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='liked_posts', blank=True)
     # How many times the Share button was used.
     shares_count = models.PositiveIntegerField(default=0)
@@ -70,3 +85,10 @@ class Comment(models.Model):
             grandparent = parent.parent
             parent.delete()
             parent = grandparent
+
+
+@receiver(post_delete, sender=Post)
+def delete_post_video(sender, instance, **kwargs):
+    """Remove a post's video from disk with it (also when its community is deleted)."""
+    if instance.video:
+        instance.video.delete(save=False)

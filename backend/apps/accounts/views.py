@@ -139,6 +139,11 @@ class AppPageView(LoginRequiredMixin, VuePageView):
             # Place search for location pickers.
             'mapSearchApi': reverse('api-map-search'),
             'mapReverseApi': reverse('api-map-reverse'),
+            # Chats: the list with unread counts (also the sidebar badge) and
+            # the live socket (see apps/chat/consumers.py).
+            'chatsApi': reverse('api-chats'),
+            'chatSocketPath': '/ws/chat/',
+            'chatMaxFileMb': settings.CHAT_MAX_FILE_MB,
         }
 
 

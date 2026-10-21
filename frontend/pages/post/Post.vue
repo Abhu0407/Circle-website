@@ -8,6 +8,9 @@
     :signout-api="signoutApi"
     :signin-url="signinUrl"
     :map-tile-url="mapTileUrl"
+    :chats-api="chatsApi"
+    :chat-socket-path="chatSocketPath"
+    :chat-max-file-mb="chatMaxFileMb"
     :map-people="mapPeople"
   >
     <PageSheet title="Post" :back-url="post.community.url" :back-label="post.community.name">
@@ -31,6 +34,9 @@ const props = defineProps({
   signoutApi: { type: String, required: true },
   signinUrl: { type: String, required: true },
   mapTileUrl: { type: String, required: true },
+  chatsApi: { type: String, default: '' },
+  chatSocketPath: { type: String, default: '' },
+  chatMaxFileMb: { type: Number, default: 25 },
   mapPeople: { type: Array, default: () => [] },
 });
 

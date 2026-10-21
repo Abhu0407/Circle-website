@@ -1,6 +1,6 @@
 // Small fetch helper for calling the Django JSON API.
 
-function getCookie(name) {
+export function getCookie(name) {
   const match = document.cookie.match(new RegExp('(^|;\\s*)' + name + '=([^;]*)'));
   return match ? decodeURIComponent(match[2]) : null;
 }
@@ -67,4 +67,25 @@ export function apiPatch(url, data = {}) {
 
 export function apiDelete(url) {
   return send('DELETE', url);
+}
+
+// POST a FormData with upload progress (fetch can't report it).
+// `onProgress(0..1)`; resolves with the JSON reply or throws ApiError.
+export function apiUpload(url, form, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.setRequestHeader('X-CSRFToken', getCookie('csrftoken'));
+    xhr.responseType = 'json';
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      const body = xhr.response || {};
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body);
+      else reject(new ApiError(xhr.status, body));
+    };
+    xhr.onerror = () => reject(new TypeError('Network error'));
+    xhr.send(form);
+  });
 }

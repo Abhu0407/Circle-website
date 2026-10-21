@@ -37,6 +37,14 @@
 
     <p v-if="p.body" class="post__body">{{ p.body }}</p>
     <img v-if="p.image" :src="p.image" alt="" class="post__image" loading="lazy" />
+    <video
+      v-else-if="p.video"
+      :src="p.video"
+      class="post__image post__video"
+      controls
+      playsinline
+      preload="metadata"
+    ></video>
 
     <div v-if="p.likes_count || p.comments_count || p.shares_count" class="post__stats">
       <span v-if="p.likes_count">{{ plural(p.likes_count, 'like') }}</span>
@@ -258,6 +266,11 @@ button {
   object-fit: cover;
   background: var(--surface-muted);
   border-radius: 12px;
+}
+
+.post__video {
+  object-fit: contain;
+  background: #000;
 }
 
 .post__stats {

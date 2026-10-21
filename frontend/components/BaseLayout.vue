@@ -50,6 +50,11 @@
         >
           <Icon :name="item.icon" />
           <span>{{ item.label }}</span>
+          <span
+            v-if="item.id === 'chats' && totalUnread"
+            class="nav__badge"
+            :aria-label="`${totalUnread} unread`"
+          >{{ totalUnread > 99 ? '99+' : totalUnread }}</span>
         </a>
 
         <hr class="nav__divider" />
@@ -127,6 +132,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { apiPost } from '../api.mjs';
+import { startChat, totalUnread } from '../chat.mjs';
 import BrandLogo from './BrandLogo.vue';
 import Icon from './Icon.vue';
 import Modal from './Modal.vue';
@@ -147,6 +153,10 @@ const props = defineProps({
   mapTileUrl: { type: String, required: true },
   mapPeople: { type: Array, default: () => [] },
   events: { type: Array, default: () => [] },
+  // Live chat (unread badge on Chats). Without them the badge is hidden.
+  chatsApi: { type: String, default: '' },
+  chatSocketPath: { type: String, default: '' },
+  chatMaxFileMb: { type: Number, default: 25 },
 });
 const emit = defineEmits(['navigate']);
 
@@ -159,6 +169,15 @@ const NAV = [
   { id: 'profile', label: 'Profile', icon: 'user', href: props.profileUrl },
 ];
 const CREATE = { id: 'create', label: 'Create Community', icon: 'plus', href: tabUrl('create') };
+
+// Opens the live chat socket once; it stays open across pages. Started
+// here (not in onMounted) because the page inside, such as a chat room,
+// mounts first and already needs it.
+if (props.chatsApi && props.chatSocketPath) {
+  startChat({
+    chatsApi: props.chatsApi, socketPath: props.chatSocketPath, userId: props.user.id, maxFileMb: props.chatMaxFileMb,
+  });
+}
 
 const menuOpen = ref(false);
 // Phone-width menu (☰).
@@ -291,6 +310,19 @@ button {
   color: #fff;
   background: rgba(255, 255, 255, 0.1);
   box-shadow: inset 3px 0 0 var(--teal);
+}
+
+.nav__badge {
+  min-width: 20px;
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: #fff;
+  background: var(--red);
+  border-radius: 999px;
 }
 
 .nav__divider {

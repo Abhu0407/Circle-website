@@ -41,7 +41,8 @@ that email, or creates one (username from the email, no password).
 Browser ──> Django TemplateView (apps/accounts/views.py)
               renders backend/templates/base.html
                  ├─ data-component="/static/pages/auth/main.vue"     (which .vue to mount)
-                 ├─ <script id="page-props">{...}</script>       (props from the view)
+                 ├─ <script id="page-props">{...}</scripdef __str__(self):
+        return self.user.usernamet>       (props from the view)
                  └─ frontend/main.js  ──loads──> frontend/pages/*.vue
                                                    └─ calls /api/auth/* (JSON, DRF)
 ```
@@ -100,9 +101,67 @@ Browser ──> Django TemplateView (apps/accounts/views.py)
   size. Each comes with a `reason` ("You like Sports", "Near you"...). They
   appear between posts as rows you can scroll sideways.
 
+## Posts with photos or videos
+
+A post can have a photo (up to 5 MB) or a video (MP4, MOV, WebM or OGV, up
+to `POST_MAX_VIDEO_MB`, default 50), not both. The composer shows upload
+progress. Videos are stored in `media/post_videos/` and played through
+`/api/posts/<id>/video/` (signed-in users only), which lets the player skip
+ahead; files that only pretend to be videos are refused.
+
+## Chats
+
+`/?tab=chats` lists every community you joined as a box, latest message
+first, with the number of unread messages. Opening one
+(`/?tab=chats&community=<id>`) shows its group chat with all its members.
+The **Chats** item in the sidebar shows the total unread count on every page.
+
+- **Live:** messages go over a WebSocket (`/ws/chat/`, Django Channels) and
+  reach everyone in the chat instantly. `daphne` in `INSTALLED_APPS` makes
+  `python manage.py runserver` serve the sockets too, so nothing else is
+  needed in development. If the connection drops, the page reconnects and
+  fetches what it missed.
+- **Private:** only signed-in members of a community can read or send its
+  messages (checked on every request and socket message). Sockets are only
+  accepted from pages on this site (`ALLOWED_HOSTS`), so other sites can't
+  open one with your cookie. Message text is shown as plain text, never HTML.
+  Sending is limited to 10 messages per 10 seconds; messages are at most
+  2000 characters. Leaving a community stops its messages right away.
+- **Photos, videos and files:** attach them with the 📎 button, drag them
+  onto the chat, or paste them (up to 10 at a time, `CHAT_MAX_FILE_MB`
+  each, default 25). Photos and videos show in the chat; other files show
+  as a card to download. They are stored in `backend/chat_files/`, **not**
+  the public `media/` folder, and only sent (by `/api/chats/files/<id>/`)
+  to members of that community. Photos are re-saved without their hidden
+  metadata (such as the GPS location they were taken at); files that only
+  pretend to be photos or videos are treated as plain downloads; program and
+  script files (`.exe`, `.bat`, `.js`, `.html`, `.svg`...) are refused.
+- **Emoji:** the 😊 button opens a picker (search, categories, recently
+  used). The emoji list is in `frontend/emoji.mjs`, so it works offline. A
+  message of only 1-3 emoji is shown large.
+- **Unread:** each user has a read marker per community (`ChatRead`).
+  Messages after it that someone else wrote are unread; opening the chat
+  moves it forward. New members start with nothing unread.
+
+| Path                               | Purpose                                                   |
+| ---------------------------------- | --------------------------------------------------------- |
+| `backend/apps/chat/services.py`    | Membership checks, sending, history, unread counts        |
+| `backend/apps/chat/consumers.py`   | The live socket                                           |
+| `backend/apps/chat/attachments.py` | Checks and cleans photos, videos and files before saving  |
+| `backend/apps/chat/views.py`       | `GET /api/chats/`, `/api/chats/<id>/messages/`, `/read/`  |
+| `frontend/chat.mjs`                | The shared socket and live unread counts                  |
+| `frontend/components/ChatList.vue` | Community boxes with unread badges                        |
+| `frontend/components/ChatRoom.vue` | One community's chat                                      |
+| `frontend/components/EmojiPicker.vue` | The emoji picker (emoji list: `frontend/emoji.mjs`)    |
+
+**Going live:** serve over HTTPS (the page then uses `wss://` automatically),
+run with an ASGI server (`daphne config.asgi:application`), and if you run
+more than one process, `pip install channels-redis` and set `REDIS_URL` in
+`.env` so messages reach users connected to any process.
+
 ## Tests
 
 ```powershell
 cd backend
-python manage.py test apps.accounts
+python manage.py test apps.accounts apps.chat
 ```

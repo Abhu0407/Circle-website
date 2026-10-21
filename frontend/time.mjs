@@ -16,3 +16,21 @@ export function timeAgo(iso) {
 export function fullDate(iso) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
+
+// Chat: "14:05".
+export function clockTime(iso) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+// Chat day separators: "Today", "Yesterday", "Mon, 12 Oct".
+export function dayLabel(iso) {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  const sameYear = date.getFullYear() === today.getFullYear();
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short', day: 'numeric', month: 'short', year: sameYear ? undefined : 'numeric',
+  });
+}

@@ -11,6 +11,9 @@
     :signout-api="signoutApi"
     :signin-url="signinUrl"
     :map-tile-url="mapTileUrl"
+    :chats-api="chatsApi"
+    :chat-socket-path="chatSocketPath"
+    :chat-max-file-mb="chatMaxFileMb"
     :map-people="mapPeople"
     :events="events"
   >
@@ -368,6 +371,9 @@ const props = defineProps({
   meApi: { type: String, required: true },
   usernameCheckApi: { type: String, required: true },
   mapTileUrl: { type: String, required: true },
+  chatsApi: { type: String, default: '' },
+  chatSocketPath: { type: String, default: '' },
+  chatMaxFileMb: { type: Number, default: 25 },
   mapSearchApi: { type: String, required: true },
   mapReverseApi: { type: String, required: true },
   // [{ value, label }]: the community categories; interests are picked from these.

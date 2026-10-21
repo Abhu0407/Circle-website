@@ -1,10 +1,15 @@
+import io
+import os
 import tempfile
 from io import StringIO
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
+
+from PIL import Image
 
 from apps.communities.models import Category, Community
 
@@ -223,3 +228,52 @@ class SeedDemoTests(TestCase):
         self.run_seed('--clear')
         self.assertFalse(Community.objects.exists())
         self.assertEqual(list(User.objects.values_list('username', flat=True)), ['me'])
+
+
+MP4 = b'\x00\x00\x00\x18ftypmp42' + b'\x00' * 3000
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(), POST_MAX_VIDEO_MB=1)
+class PostVideoTests(TestCase):
+    def setUp(self):
+        self.hikers = Community.objects.create(name='Hikers')
+        self.alice = User.objects.create_user('alice', 'alice@example.com', 'S3cure-pass!')
+        self.alice.join_community.add(self.hikers)
+        self.client.force_login(self.alice)
+
+    def post(self, **files):
+        data = {'community_id': self.hikers.pk, 'body': ''}
+        data.update({k: SimpleUploadedFile(name, content) for k, (name, content) in files.items()})
+        return self.client.post(reverse('api-posts'), data)
+
+    def test_video_post_plays_with_seeking(self):
+        res = self.post(video=('trail.mov', MP4))
+        self.assertEqual(res.status_code, 201, res.content)
+        url = res.json()['video']
+        self.assertEqual(url, reverse('api-post-video', args=[res.json()['id']]))
+        self.assertIsNone(res.json()['image'])
+        post = Post.objects.get()
+        self.assertTrue(post.video.name.endswith('.mp4'))  # .mov stored as .mp4
+        self.assertEqual(post.video_type, 'video/mp4')
+
+        res = self.client.get(url, HTTP_RANGE='bytes=4-11')
+        self.assertEqual(res.status_code, 206)
+        self.assertEqual(b''.join(res.streaming_content), b'ftypmp42')
+        self.client.logout()
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_rejects_fake_big_and_both(self):
+        self.assertEqual(self.post(video=('x.mp4', b'not a video, just text')).status_code, 400)
+        self.assertEqual(self.post(video=('x.exe', MP4)).status_code, 400)
+        self.assertEqual(self.post(video=('big.mp4', MP4 + b'\x00' * 1024 * 1024)).status_code, 400)
+        out = io.BytesIO()
+        Image.new('RGB', (4, 4)).save(out, 'PNG')
+        res = self.post(video=('a.mp4', MP4), image=('a.png', out.getvalue()))
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(Post.objects.exists())
+
+    def test_video_file_removed_with_post(self):
+        res = self.post(video=('a.mp4', MP4))
+        path = Post.objects.get().video.path
+        self.client.delete(reverse('api-post', args=[res.json()['id']]))
+        self.assertFalse(os.path.exists(path))

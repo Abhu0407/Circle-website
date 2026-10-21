@@ -1,6 +1,7 @@
 <!--
   "Share something…" bar that opens the Create post popup: pick the
-  community, write, add a photo, then Post publishes it to that community.
+  community, write, add a photo or a video, then Post publishes it to that
+  community (with upload progress for big files).
   Emits `created` with the new post.
   Usage: <PostComposer :communities="user.join_community" :posts-api="postsApi" :user="user" @created="..." />
 -->
@@ -10,8 +11,8 @@
     <button type="button" class="starter__prompt" @click="openPopup()">
       {{ posted || `Share something with ${selectedName}…` }}
     </button>
-    <button type="button" class="starter__btn" title="Add a photo" @click="openPopup(true)">
-      <Icon name="image" :size="18" /> <span>Photo</span>
+    <button type="button" class="starter__btn" title="Add a photo or video" @click="openPopup(true)">
+      <Icon name="image" :size="18" /> <span>Photo/Video</span>
     </button>
     <ActionButton icon="plus" label="Post" size="sm" class="starter__post" @click="openPopup()" />
   </div>
@@ -49,7 +50,8 @@
       </div>
 
       <div v-if="preview" class="pform__preview">
-        <img :src="preview" alt="Photo to post" />
+        <video v-if="mediaKind === 'video'" :src="preview" controls playsinline preload="metadata"></video>
+        <img v-else :src="preview" alt="Photo to post" />
         <div class="pform__preview-actions">
           <button type="button" @click="fileInput.click()"><Icon name="camera" :size="14" /> Change</button>
           <button type="button" @click="clearImage"><Icon name="trash" :size="14" /> Remove</button>
@@ -64,13 +66,16 @@
         @drop.prevent="onDrop"
       >
         <Icon name="image" :size="26" />
-        <strong>Add a photo</strong>
-        <span>Click or drag one here · up to 5 MB</span>
-        <input ref="fileInput" type="file" accept="image/*" @change="pickImage($event.target.files[0])" />
+        <strong>Add a photo or video</strong>
+        <span>Click or drag one here · photos up to 5 MB, videos up to {{ MAX_VIDEO_MB }} MB</span>
+        <input ref="fileInput" type="file" :accept="ACCEPT" @change="pickImage($event.target.files[0])" />
       </label>
       <!-- Kept mounted while a photo is shown, for "Change". -->
-      <input v-if="preview" ref="fileInput" type="file" accept="image/*" class="pform__hidden" @change="pickImage($event.target.files[0])" />
+      <input v-if="preview" ref="fileInput" type="file" :accept="ACCEPT" class="pform__hidden" @change="pickImage($event.target.files[0])" />
 
+      <div v-if="sending && image" class="pform__progress" :aria-label="`Uploading ${progress}%`">
+        <span :style="{ width: `${progress}%` }"></span>
+      </div>
       <p v-if="error" class="pform__error" role="alert">{{ error }}</p>
     </form>
 
@@ -81,7 +86,7 @@
         type="submit"
         form="post-form"
         icon="send"
-        :label="sending ? 'Posting…' : 'Post'"
+        :label="sending ? (image && progress < 100 ? `Uploading ${progress}%` : 'Posting…') : 'Post'"
         :disabled="sending || (!body.trim() && !image)"
       />
     </template>
@@ -90,7 +95,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { apiPost, parseErrors } from '../api.mjs';
+import { apiUpload, parseErrors } from '../api.mjs';
 import ActionButton from './ActionButton.vue';
 import Icon from './Icon.vue';
 import Modal from './Modal.vue';
@@ -98,6 +103,10 @@ import UserAvatar from './UserAvatar.vue';
 
 const MAX_LENGTH = 5000;
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+// Same as POST_MAX_VIDEO_MB on the server (which has the final say).
+const MAX_VIDEO_MB = 50;
+const ACCEPT = 'image/*,video/mp4,video/quicktime,video/webm,video/ogg,.mp4,.mov,.m4v,.webm,.ogv';
+const VIDEO_EXT = /\.(mp4|mov|m4v|webm|ogv)$/i;
 
 const props = defineProps({
   // [{ id, name }] — the communities the user can post in.
@@ -111,8 +120,11 @@ const emit = defineEmits(['created']);
 
 const open = ref(false);
 const body = ref('');
+// The photo or video to post (a File), and which of the two it is.
 const image = ref(null);
+const mediaKind = ref('');
 const preview = ref('');
+const progress = ref(0);
 const communityId = ref(props.defaultCommunity || (props.communities[0] || {}).id);
 const sending = ref(false);
 const error = ref('');
@@ -149,19 +161,30 @@ function reset() {
   clearImage();
 }
 
+// A photo or a video.
 function pickImage(file) {
   if (!file) return;
-  if (!file.type.startsWith('image/')) {
-    error.value = 'That file is not a photo.';
+  const isVideo = file.type.startsWith('video/') || VIDEO_EXT.test(file.name);
+  if (!isVideo && !file.type.startsWith('image/')) {
+    error.value = 'Pick a photo or a video.';
     return;
   }
-  if (file.size > MAX_IMAGE_SIZE) {
+  if (isVideo && !VIDEO_EXT.test(file.name)) {
+    error.value = 'Use an MP4, MOV, WebM or OGV video.';
+    return;
+  }
+  if (!isVideo && file.size > MAX_IMAGE_SIZE) {
     error.value = 'Photo must be 5 MB or smaller.';
+    return;
+  }
+  if (isVideo && file.size > MAX_VIDEO_MB * 1024 * 1024) {
+    error.value = `Video must be ${MAX_VIDEO_MB} MB or smaller.`;
     return;
   }
   clearImage();
   error.value = '';
   image.value = file;
+  mediaKind.value = isVideo ? 'video' : 'image';
   preview.value = URL.createObjectURL(file);
 }
 
@@ -173,6 +196,7 @@ function onDrop(event) {
 function clearImage() {
   if (preview.value) URL.revokeObjectURL(preview.value);
   image.value = null;
+  mediaKind.value = '';
   preview.value = '';
 }
 
@@ -182,13 +206,16 @@ let postedTimer;
 async function submit() {
   if (sending.value || (!body.value.trim() && !image.value)) return;
   sending.value = true;
+  progress.value = 0;
   error.value = '';
   const form = new FormData();
   form.append('community_id', communityId.value);
   form.append('body', body.value);
-  if (image.value) form.append('image', image.value);
+  if (image.value) form.append(mediaKind.value === 'video' ? 'video' : 'image', image.value);
   try {
-    const post = await apiPost(props.postsApi, form);
+    const post = await apiUpload(props.postsApi, form, (f) => {
+      progress.value = Math.round(f * 100);
+    });
     sending.value = false;
     reset();
     emit('created', post);
@@ -390,6 +417,28 @@ button {
 
 .pform__preview {
   position: relative;
+}
+
+.pform__preview video {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  background: #000;
+  border-radius: 12px;
+}
+
+.pform__progress {
+  height: 6px;
+  overflow: hidden;
+  background: var(--surface-muted);
+  border-radius: 999px;
+}
+
+.pform__progress span {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.2s;
 }
 
 .pform__preview img {

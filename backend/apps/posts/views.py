@@ -1,9 +1,12 @@
+from pathlib import Path
 from urllib.parse import urlencode
 
 from django.db.models import Count, Exists, F, OuterRef, Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.functional import cached_property
+from django.views import View
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import CursorPagination
@@ -11,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.views import AppPageView
+from apps.fileserve import serve_file
 
 from .feed import ranked_post_ids, suggested_communities
 from .models import Comment, Post
@@ -153,6 +157,18 @@ class PostDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
         if instance.image:
             instance.image.delete(save=False)
         instance.delete()
+
+
+class PostVideoView(View):
+    """GET a post's video (signed in only), with Range support so the
+    player can skip ahead."""
+
+    def get(self, request, pk):
+        if not request.user.is_authenticated:
+            raise Http404
+        post = get_object_or_404(Post.objects.exclude(video='').exclude(video=None), pk=pk)
+        name = f'video{Path(post.video.name).suffix}'
+        return serve_file(request, post.video, post.video_type or 'video/mp4', name)
 
 
 class PostLikeAPIView(APIView):

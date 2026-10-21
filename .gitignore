@@ -15,3 +15,4 @@ backend/staticfiles/
 # Map tiles cached by apps/maps, and user uploads
 backend/tile_cache/
 backend/media/
+backend/chat_files/

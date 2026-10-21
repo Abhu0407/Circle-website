@@ -38,6 +38,8 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.x.x', '0.0.0.0']
 # Application definition
 
 INSTALLED_APPS = [
+    # Must be first: makes `runserver` serve the live chat sockets (ASGI).
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -45,10 +47,12 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'channels',
     'apps.accounts',
     'apps.communities',
     'apps.maps',
     'apps.posts',
+    'apps.chat',
 ]
 
 MIDDLEWARE = [
@@ -79,6 +83,20 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = 'config.asgi.application'
+
+# Live chat (Django Channels). The in-memory layer works for one server
+# process, which is all `runserver` uses. With several processes/servers,
+# `pip install channels-redis` and set REDIS_URL (e.g. redis://127.0.0.1:6379).
+if os.environ.get('REDIS_URL'):
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {'hosts': [os.environ['REDIS_URL']]},
+        },
+    }
+else:
+    CHANNEL_LAYERS = {'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'}}
 
 
 # Database
@@ -136,6 +154,14 @@ STATICFILES_DIRS = [FRONTEND_DIR]
 # User uploads (e.g. profile pictures)
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Photos, videos and files sent in chat. Kept outside MEDIA_ROOT on purpose:
+# they are private to each community and only served by apps/chat (to members).
+CHAT_FILES_ROOT = BASE_DIR / 'chat_files'
+CHAT_MAX_FILE_MB = int(os.environ.get('CHAT_MAX_FILE_MB', 25))
+
+# Largest video a post can have (stored in MEDIA_ROOT/post_videos/).
+POST_MAX_VIDEO_MB = int(os.environ.get('POST_MAX_VIDEO_MB', 50))
 
 
 # Authentication

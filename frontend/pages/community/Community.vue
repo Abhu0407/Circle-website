@@ -8,6 +8,9 @@
     :signout-api="signoutApi"
     :signin-url="signinUrl"
     :map-tile-url="mapTileUrl"
+    :chats-api="chatsApi"
+    :chat-socket-path="chatSocketPath"
+    :chat-max-file-mb="chatMaxFileMb"
     :map-people="mapPeople"
   >
     <PageSheet title="Community" :back-url="communitiesUrl" back-label="My Communities">
@@ -23,6 +26,9 @@
         <template #actions>
           <!-- Joined is only a status box; leaving is done with the button beside the description. -->
           <span v-if="c.is_member" class="joined">Joined</span>
+          <a v-if="c.is_member" :href="`${homeUrl}?tab=chats&community=${c.id}`" class="chatlink">
+            <Icon name="chat" :size="16" /> Open chat
+          </a>
           <ActionButton v-else icon="userPlus" :label="busy ? 'Joining…' : 'Join community'" size="sm" :disabled="busy" @click="setMember(true)" />
         </template>
 
@@ -183,6 +189,9 @@ const props = defineProps({
   signoutApi: { type: String, required: true },
   signinUrl: { type: String, required: true },
   mapTileUrl: { type: String, required: true },
+  chatsApi: { type: String, default: '' },
+  chatSocketPath: { type: String, default: '' },
+  chatMaxFileMb: { type: Number, default: 25 },
   mapPeople: { type: Array, default: () => [] },
   mapSearchApi: { type: String, required: true },
   mapReverseApi: { type: String, required: true },
@@ -299,6 +308,23 @@ async function setMember(join) {
   border-radius: 10px;
   cursor: default;
   user-select: none;
+}
+
+.chatlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--primary);
+  border-radius: 10px;
+}
+
+.chatlink:hover {
+  text-decoration: none;
+  background: var(--primary-hover);
 }
 
 /* ---------- description (in the header) + Leave on its right ---------- */
