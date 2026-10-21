@@ -1,6 +1,7 @@
 import io
 import os
 import tempfile
+from datetime import timedelta
 from io import StringIO
 
 from django.contrib.auth import get_user_model
@@ -8,6 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from PIL import Image
 
@@ -196,6 +198,31 @@ class ForYouTests(TestCase):
         top = [p['community']['category'] for seed in 'abcde' for p in self.feed(seed)['results']]
         self.assertGreater(top.count('sports'), top.count('music') * 2)
 
+    def test_feed_puts_best_matches_first(self):
+        old = timezone.now() - timedelta(days=10)
+        for i in range(5):
+            Post.objects.create(community=self.music, author=self.bob, body='other')
+            Post.objects.create(community=self.sports, author=self.bob, body='interest')
+            Post.objects.create(community=self.food, author=self.bob, body='joined')
+        stale = Post.objects.create(community=self.food, author=self.bob, body='stale')
+        Post.objects.filter(pk=stale.pk).update(created_at=old)
+        for seed in 'abc':
+            bodies = [p['body'] for p in self.feed(seed)['results'] + self.feed(seed, 10)['results']]
+            # Fresh joined and interest posts come before unrelated and stale ones.
+            self.assertEqual(set(bodies[:10]), {'joined', 'interest'})
+            self.assertIn('stale', bodies[10:])
+
+    def test_new_seed_changes_order_and_one_community_does_not_crowd(self):
+        self.alice.join_community.add(self.music)
+        for i in range(10):
+            Post.objects.create(community=self.food, author=self.bob, body='food')
+            Post.objects.create(community=self.music, author=self.bob, body='music')
+        orders = {tuple(p['id'] for p in self.feed(seed)['results']) for seed in 'abcdef'}
+        self.assertGreater(len(orders), 1)
+        # Equally good communities take turns instead of one filling the top.
+        for seed in 'abcdef':
+            self.assertEqual({p['body'] for p in self.feed(seed)['results'][:4]}, {'food', 'music'})
+
     def test_suggestions_skip_joined_and_rank_interests_first(self):
         data = self.client.get(reverse('api-feed-communities')).json()
         self.assertEqual([c['name'] for c in data][0], 'Footy')
@@ -205,7 +232,7 @@ class ForYouTests(TestCase):
 
     def test_home_opens_on_for_you(self):
         response = self.client.get(reverse('home'))
-        self.assertContains(response, '"tab": "foryou"')
+        self.assertContains(response, 'pages/home/main.vue')
         self.assertContains(response, reverse('api-feed'))
 
 

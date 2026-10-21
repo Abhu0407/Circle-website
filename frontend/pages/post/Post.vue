@@ -3,6 +3,7 @@
   <BaseLayout
     :user="user"
     active="communities"
+    :nav-urls="navUrls"
     :home-url="homeUrl"
     :profile-url="profileUrl"
     :signout-api="signoutApi"
@@ -12,6 +13,7 @@
     :chat-socket-path="chatSocketPath"
     :chat-max-file-mb="chatMaxFileMb"
     :map-people="mapPeople"
+    :notifications-unread="notificationsUnread"
   >
     <PageSheet title="Post" :back-url="post.community.url" :back-label="post.community.name">
       <PostCard :post="post" :posts-api="postsApi" :user="user" show-comments @deleted="leave" />
@@ -30,6 +32,7 @@ const props = defineProps({
   post: { type: Object, required: true },
   postsApi: { type: String, required: true },
   homeUrl: { type: String, required: true },
+  navUrls: { type: Object, required: true },
   profileUrl: { type: String, required: true },
   signoutApi: { type: String, required: true },
   signinUrl: { type: String, required: true },
@@ -38,6 +41,7 @@ const props = defineProps({
   chatSocketPath: { type: String, default: '' },
   chatMaxFileMb: { type: Number, default: 25 },
   mapPeople: { type: Array, default: () => [] },
+  notificationsUnread: { type: Number, default: 0 },
 });
 
 // After deleting the post, go back to its community.

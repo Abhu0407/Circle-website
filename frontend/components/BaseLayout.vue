@@ -1,17 +1,17 @@
 <!--
   The frame shared by every signed-in page: left sidebar (logo, location,
   menu, account menu), the dark header band, the right panel (Quick Activity
-  Map, Happening Now) and the responsive grid. The page's own content goes in
+  Map) and the responsive grid. The page's own content goes in
   the default slot.
 
   Usage (see pages/home/Home.vue, pages/profile/Profile.vue):
-    <BaseLayout :user="me" active="profile" :home-url="homeUrl" ...>
+    <BaseLayout :user="me" active="profile" :nav-urls="navUrls" :home-url="homeUrl" ...>
       ...page content...
     </BaseLayout>
 
-  Menu items are links. Items listed in `localTabs` are handled by the page
-  itself without a reload: clicking one emits `navigate` with its id.
-  On phones the menu is hidden behind a ☰ button and opens as a list.
+  Menu items are links to each page's own URL (navUrls, from Django's
+  AppPageView). On phones the menu is hidden behind a ☰ button and opens
+  as a list.
 -->
 <template>
   <div class="layout">
@@ -46,15 +46,15 @@
           class="nav__item"
           :class="{ 'nav__item--active': active === item.id }"
           :aria-current="active === item.id ? 'page' : undefined"
-          @click="onNav($event, item.id)"
+          @click="navOpen = false"
         >
           <Icon :name="item.icon" />
           <span>{{ item.label }}</span>
           <span
-            v-if="item.id === 'chats' && totalUnread"
+            v-if="badgeFor(item.id)"
             class="nav__badge"
-            :aria-label="`${totalUnread} unread`"
-          >{{ totalUnread > 99 ? '99+' : totalUnread }}</span>
+            :aria-label="`${badgeFor(item.id)} ${item.id === 'chats' ? 'unread' : 'new'}`"
+          >{{ badgeFor(item.id) > 99 ? '99+' : badgeFor(item.id) }}</span>
         </a>
 
         <hr class="nav__divider" />
@@ -64,7 +64,7 @@
           class="nav__item"
           :class="{ 'nav__item--active': active === CREATE.id }"
           :aria-current="active === CREATE.id ? 'page' : undefined"
-          @click="onNav($event, CREATE.id)"
+          @click="navOpen = false"
         >
           <Icon :name="CREATE.icon" />
           <span>{{ CREATE.label }}</span>
@@ -114,17 +114,6 @@
           <PeopleMap :tile-url="mapTileUrl" :people="mapPeople" :me="user" large />
         </Modal>
       </section>
-
-      <section class="panel">
-        <h2 class="panel__title">Happening Now</h2>
-        <ul v-if="events.length" class="events">
-          <li v-for="e in events" :key="e.id" class="event" :style="{ '--c': e.color }">
-            <strong>{{ e.title }}</strong>
-            <span><Icon name="clock" :size="13" /> {{ e.time }}</span>
-          </li>
-        </ul>
-        <p v-else class="panel__empty">Nothing happening right now.</p>
-      </section>
     </aside>
   </div>
 </template>
@@ -139,36 +128,34 @@ import Modal from './Modal.vue';
 import PeopleMap from './PeopleMap.vue';
 
 // mapPeople: [{ id, username, lat, lng }]  (Quick Activity Map pins)
-// events:    [{ id, title, time, color }]  (Happening Now)
 const props = defineProps({
   user: { type: Object, required: true },
   // Which menu item is highlighted.
   active: { type: String, default: '' },
-  // Menu ids this page switches between itself (no reload).
-  localTabs: { type: Array, default: () => [] },
+  // { foryou, discover, communities, chats, notifications, create, profile }: menu links.
+  navUrls: { type: Object, required: true },
   homeUrl: { type: String, required: true },
   profileUrl: { type: String, required: true },
   signoutApi: { type: String, required: true },
   signinUrl: { type: String, required: true },
   mapTileUrl: { type: String, required: true },
   mapPeople: { type: Array, default: () => [] },
-  events: { type: Array, default: () => [] },
   // Live chat (unread badge on Chats). Without them the badge is hidden.
   chatsApi: { type: String, default: '' },
   chatSocketPath: { type: String, default: '' },
   chatMaxFileMb: { type: Number, default: 25 },
+  // New posts and communities since Notifications was last opened.
+  notificationsUnread: { type: Number, default: 0 },
 });
-const emit = defineEmits(['navigate']);
-
-const tabUrl = (id) => `${props.homeUrl}?tab=${id}`;
 const NAV = [
-  { id: 'foryou', label: 'For You', icon: 'sparkle', href: props.homeUrl },
-  { id: 'discover', label: 'Discover', icon: 'compass', href: tabUrl('discover') },
-  { id: 'communities', label: 'My Communities', icon: 'users', href: tabUrl('communities') },
-  { id: 'chats', label: 'Chats', icon: 'chat', href: tabUrl('chats') },
-  { id: 'profile', label: 'Profile', icon: 'user', href: props.profileUrl },
+  { id: 'foryou', label: 'For You', icon: 'sparkle', href: props.navUrls.foryou },
+  { id: 'discover', label: 'Discover', icon: 'compass', href: props.navUrls.discover },
+  { id: 'communities', label: 'My Communities', icon: 'users', href: props.navUrls.communities },
+  { id: 'chats', label: 'Chats', icon: 'chat', href: props.navUrls.chats },
+  { id: 'notifications', label: 'Notifications', icon: 'bell', href: props.navUrls.notifications },
+  { id: 'profile', label: 'Profile', icon: 'user', href: props.navUrls.profile },
 ];
-const CREATE = { id: 'create', label: 'Create Community', icon: 'plus', href: tabUrl('create') };
+const CREATE = { id: 'create', label: 'Create Community', icon: 'plus', href: props.navUrls.create };
 
 // Opens the live chat socket once; it stays open across pages. Started
 // here (not in onMounted) because the page inside, such as a chat room,
@@ -177,6 +164,13 @@ if (props.chatsApi && props.chatSocketPath) {
   startChat({
     chatsApi: props.chatsApi, socketPath: props.chatSocketPath, userId: props.user.id, maxFileMb: props.chatMaxFileMb,
   });
+}
+
+// The number on a menu item: unread chat messages, new notifications.
+function badgeFor(id) {
+  if (id === 'chats') return totalUnread.value;
+  if (id === 'notifications') return props.notificationsUnread;
+  return 0;
 }
 
 const menuOpen = ref(false);
@@ -194,13 +188,6 @@ const displayName = computed(
 );
 const initial = computed(() => displayName.value.charAt(0).toUpperCase());
 const cityName = computed(() => (props.user.location || '').split(',')[0].trim());
-
-function onNav(event, id) {
-  navOpen.value = false;
-  if (!props.localTabs.includes(id)) return; // normal link: load that page
-  event.preventDefault();
-  emit('navigate', id);
-}
 
 async function signOut() {
   signingOut.value = true;
@@ -503,49 +490,6 @@ button {
   font-weight: 600;
 }
 
-.panel__empty {
-  margin: 0;
-  padding: 16px 12px;
-  font-size: 14px;
-  text-align: center;
-  color: var(--muted);
-  background: var(--surface-muted);
-  border-radius: 10px;
-}
-
-.events {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.event {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  font-size: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--c);
-  border-radius: 10px;
-}
-
-.event strong {
-  font-weight: 500;
-}
-
-.event span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
 /* ---------- responsive ---------- */
 @media (max-width: 1200px) {
   .layout {
@@ -557,7 +501,7 @@ button {
   .aside {
     position: static;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     align-items: start;
     height: auto;
     padding: 0 clamp(16px, 3vw, 36px) 40px;

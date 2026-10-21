@@ -1,7 +1,8 @@
 <!--
   Home's For You tab (inside the page's PageSheet): posts from every
-  community, shuffled with a lean towards the user's interests and activity
-  (see backend/apps/posts/feed.py), loading more while scrolling. Rows of
+  community, best match for the user first (joined communities, interests,
+  activity, freshness... see backend/apps/posts/feed.py), loading more while
+  scrolling. Each visit gets a new seed, so the order varies a little. Rows of
   suggested communities the user hasn't joined sit between the posts.
   Emits `joined` with a community joined from a suggestion, and `navigate`
   (tab id) for the empty-state buttons.
@@ -12,7 +13,6 @@
   <div class="foryou">
     <div class="toolbar">
       <p class="toolbar__label">Picked for you from <strong>all communities</strong></p>
-      <ActionButton icon="sparkle" label="Shuffle" size="sm" variant="secondary" :disabled="loading" @click="shuffle" />
     </div>
 
     <template v-for="item in items" :key="item.key">
@@ -71,10 +71,9 @@ const loading = ref(false);
 const error = ref('');
 const sentinel = ref(null);
 
-// The order of the feed; a new seed reshuffles it.
-const newSeed = () => Math.random().toString(36).slice(2, 10);
-let seed = newSeed();
-// Ignore answers to requests made before a shuffle.
+// Varies the order a little; new on every visit, kept while scrolling so pages follow on.
+const seed = Math.random().toString(36).slice(2, 10);
+// Ignore answers to requests made before a newer reset.
 let request = 0;
 let observer = null;
 
@@ -129,15 +128,6 @@ async function loadSuggestions() {
   } catch {
     suggestions.value = []; // the feed works without them
   }
-}
-
-function shuffle() {
-  seed = newSeed();
-  posts.value = [];
-  next.value = null;
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-  load(true);
-  loadSuggestions();
 }
 
 function onDeleted(id) {

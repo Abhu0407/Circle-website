@@ -34,7 +34,7 @@
   };
 
   let app = null;
-  // The path of the page on screen; pages like Home change only the query
+  // The path of the page on screen; pages like Chats change only the query
   // string with pushState, and handle those back/forward steps themselves.
   let currentPath = window.location.pathname;
   let navId = 0;

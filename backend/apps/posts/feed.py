@@ -4,10 +4,17 @@ communities to suggest.
 Both lean on the user's *taste*: how much they care about each category,
 from the interests they picked on Profile plus what they do (communities
 joined, posts written, liked and commented on).
+
+Posts are scored (see `post_score`) and shown best first, so the top of the
+feed is what the user most likely wants. Every page load brings a new seed
+that nudges each score a little, so a refresh doesn't show the very same
+posts in the very same order; and one community isn't shown many times in
+a row.
 """
 import hashlib
+import heapq
 import math
-from collections import Counter
+from collections import Counter, defaultdict
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
@@ -18,13 +25,29 @@ from apps.communities.views import distance_km
 
 from .models import Comment, Post
 
-# Only this many of the newest posts are shuffled into the feed.
+# Only this many of the newest posts are ranked into the feed.
 FEED_POOL = 1000
-# Weight of a post: 1, plus these for its category.
-INTEREST_BOOST = 4  # a category picked as an interest
-ACTIVITY_BOOST = 3  # times how active the user is in it (0..1)
-# Posts newer than about this many days get up to twice the weight.
-FRESH_DAYS = 3
+
+# What raises a post's score (they add up, on top of a base of 1).
+JOINED_BOOST = 5     # from a community the user joined
+INTEREST_BOOST = 4   # in a category picked as an interest
+ACTIVITY_BOOST = 3   # times how active the user is in its category (0..1)
+AUTHOR_BOOST = 2     # times how much the user engages with its author (0..1)
+NEARBY_BOOST = 1.5   # from a community near the user (fades out by NEARBY_KM)
+NEARBY_KM = 50
+# Likes and comments make a post better, but only slowly (log scale).
+ENGAGEMENT_WEIGHT = 0.4
+# A post's score halves every this many days...
+HALF_LIFE_DAYS = 2
+# ...but never drops below this share, so good older posts can still show.
+MIN_FRESHNESS = 0.1
+# Posts the user already liked or commented on have been seen: push them down.
+SEEN_FACTOR = 0.3
+# How much a refresh can move a score: a random factor between e^-NOISE and
+# e^NOISE. Bigger = more variety, smaller = stricter best-first order.
+NOISE = 0.35
+# Each post already shown from a community lowers the next one from it by this.
+REPEAT_FACTOR = 0.85
 
 # How much each kind of activity says about a category.
 ACTIVITY_POINTS = {'joined': 2, 'posted': 1.5, 'commented': 1, 'liked': 0.5}
@@ -47,36 +70,101 @@ def activity_by_category(user):
     return {category: p / top for category, p in points.items()} if top else {}
 
 
-def _shuffle_key(seed, pk, weight):
-    """Weighted random order (Efraimidis-Spirakis): sorting by u ** (1/w),
-    largest first, puts heavier posts earlier more often. `u` comes from a
-    hash so the same seed always gives the same order, page after page."""
+def author_affinity(user):
+    """{author id: 0..1}: how much `user` engages with each author's posts
+    (likes, and comments counting double), relative to their favourite."""
+    points = Counter()
+    for author_id in user.liked_posts.values_list('author_id', flat=True):
+        points[author_id] += 1
+    for author_id in Comment.objects.filter(author=user).values_list('post__author_id', flat=True):
+        points[author_id] += 2
+    points.pop(None, None)
+    points.pop(user.pk, None)
+    top = max(points.values(), default=0)
+    return {author: p / top for author, p in points.items()} if top else {}
+
+
+def _noise(seed, pk):
+    """A random factor around 1 for this post. It comes from a hash, so the
+    same seed always gives the same order (pages follow on) and a new seed
+    a slightly different one."""
     digest = hashlib.blake2b(f'{seed}:{pk}'.encode(), digest_size=8).digest()
-    u = (int.from_bytes(digest, 'big') + 1) / (2 ** 64 + 1)  # 0 < u < 1
-    return u ** (1 / weight)
+    u = int.from_bytes(digest, 'big') / 2 ** 64  # 0 <= u < 1
+    return math.exp(NOISE * (2 * u - 1))
+
+
+def post_score(*, joined, interest, activity, author, distance, likes, comments, age_days, seen):
+    """How much the user should want to see a post; higher goes first."""
+    relevance = (
+        1
+        + JOINED_BOOST * joined
+        + INTEREST_BOOST * interest
+        + ACTIVITY_BOOST * activity
+        + AUTHOR_BOOST * author
+        + (NEARBY_BOOST * max(0, 1 - distance / NEARBY_KM) if distance is not None else 0)
+    )
+    quality = 1 + ENGAGEMENT_WEIGHT * math.log1p(likes + 2 * comments)
+    freshness = max(0.5 ** (age_days / HALF_LIFE_DAYS), MIN_FRESHNESS)
+    return relevance * quality * freshness * (SEEN_FACTOR if seen else 1)
+
+
+def _spread_communities(scored):
+    """[(score, pk, community id)] -> pks, best first, except that each post
+    already taken from a community makes its next one count for less, so one
+    busy community doesn't fill the screen."""
+    queues = defaultdict(list)
+    for score, pk, community in sorted(scored, reverse=True):
+        queues[community].append((score, pk))
+    heap = [(-q[0][0], community, 0) for community, q in queues.items()]
+    heapq.heapify(heap)
+    order = []
+    while heap:
+        _, community, i = heapq.heappop(heap)
+        order.append(queues[community][i][1])
+        if i + 1 < len(queues[community]):
+            score = queues[community][i + 1][0] * REPEAT_FACTOR ** (i + 1)
+            heapq.heappush(heap, (-score, community, i + 1))
+    return order
 
 
 def ranked_post_ids(user, seed):
-    """Ids of other people's posts, newest FEED_POOL of them, shuffled with
-    `seed`; posts in categories the user likes come up much more often."""
+    """Ids of other people's posts (the newest FEED_POOL of them), best
+    match for `user` first, varied a little by `seed`."""
     interests = set(user.interested_category or [])
     activity = activity_by_category(user)
+    authors = author_affinity(user)
+    joined = set(user.join_community.values_list('id', flat=True))
+    seen = set(user.liked_posts.values_list('id', flat=True))
+    seen.update(Comment.objects.filter(author=user).values_list('post_id', flat=True))
+    here = (user.latitude, user.longitude) if user.latitude is not None and user.longitude is not None else None
     now = timezone.now()
     rows = (
         Post.objects.exclude(author=user)
         .order_by('-created_at', '-id')
-        .values_list('id', 'community__category', 'created_at')[:FEED_POOL]
-    )
-    keyed = []
-    for pk, category, created_at in rows:
-        age_days = max((now - created_at).total_seconds(), 0) / 86400
-        weight = (
-            (1 + INTEREST_BOOST * (category in interests) + ACTIVITY_BOOST * activity.get(category, 0))
-            * (1 + 1 / (1 + age_days / FRESH_DAYS))
+        .annotate(
+            n_likes=Count('likes', distinct=True),
+            n_comments=Count('comments', filter=Q(comments__is_deleted=False), distinct=True),
         )
-        keyed.append((_shuffle_key(seed, pk, weight), pk))
-    keyed.sort(reverse=True)
-    return [pk for _, pk in keyed]
+        .values_list('id', 'community_id', 'community__category', 'community__latitude',
+                     'community__longitude', 'author_id', 'created_at', 'n_likes', 'n_comments')
+        [:FEED_POOL]
+    )
+    scored = []
+    for pk, community, category, lat, lng, author, created_at, likes, comments in rows:
+        has_point = here is not None and lat is not None and lng is not None
+        score = post_score(
+            joined=community in joined,
+            interest=category in interests,
+            activity=activity.get(category, 0),
+            author=authors.get(author, 0),
+            distance=distance_km(*here, lat, lng) if has_point else None,
+            likes=likes,
+            comments=comments,
+            age_days=max((now - created_at).total_seconds(), 0) / 86400,
+            seen=pk in seen,
+        )
+        scored.append((score * _noise(seed, pk), pk, community))
+    return _spread_communities(scored)
 
 
 def suggested_communities(user, limit):

@@ -3,6 +3,7 @@
   <BaseLayout
     :user="user"
     active="communities"
+    :nav-urls="navUrls"
     :home-url="homeUrl"
     :profile-url="profileUrl"
     :signout-api="signoutApi"
@@ -12,6 +13,7 @@
     :chat-socket-path="chatSocketPath"
     :chat-max-file-mb="chatMaxFileMb"
     :map-people="mapPeople"
+    :notifications-unread="notificationsUnread"
   >
     <PageSheet title="Community" :back-url="communitiesUrl" back-label="My Communities">
       <!-- ---------- Header ---------- -->
@@ -26,7 +28,7 @@
         <template #actions>
           <!-- Joined is only a status box; leaving is done with the button beside the description. -->
           <span v-if="c.is_member" class="joined">Joined</span>
-          <a v-if="c.is_member" :href="`${homeUrl}?tab=chats&community=${c.id}`" class="chatlink">
+          <a v-if="c.is_member" :href="`${navUrls.chats}?community=${c.id}`" class="chatlink">
             <Icon name="chat" :size="16" /> Open chat
           </a>
           <ActionButton v-else icon="userPlus" :label="busy ? 'Joining…' : 'Join community'" size="sm" :disabled="busy" @click="setMember(true)" />
@@ -185,6 +187,7 @@ const props = defineProps({
   joinApi: { type: String, required: true },
   postsApi: { type: String, required: true },
   homeUrl: { type: String, required: true },
+  navUrls: { type: Object, required: true },
   profileUrl: { type: String, required: true },
   signoutApi: { type: String, required: true },
   signinUrl: { type: String, required: true },
@@ -193,6 +196,7 @@ const props = defineProps({
   chatSocketPath: { type: String, default: '' },
   chatMaxFileMb: { type: Number, default: 25 },
   mapPeople: { type: Array, default: () => [] },
+  notificationsUnread: { type: Number, default: 0 },
   mapSearchApi: { type: String, required: true },
   mapReverseApi: { type: String, required: true },
   // { category: [{ value, label, url }] }: pictures a community can pick.
@@ -201,7 +205,7 @@ const props = defineProps({
   memberPoints: { type: Array, default: () => [] },
 });
 
-const communitiesUrl = `${props.homeUrl}?tab=communities`;
+const communitiesUrl = props.navUrls.communities;
 
 const c = ref({ ...props.community });
 const busy = ref(false);

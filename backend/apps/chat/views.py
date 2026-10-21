@@ -6,6 +6,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.views import AppPageView
 from apps.fileserve import serve_file
 
 from . import services
@@ -20,6 +21,15 @@ def _int_param(request, name):
         return int(value)
     except ValueError:
         raise ValidationError({name: 'Must be a number.'})
+
+
+class ChatsPageView(AppPageView):
+    """Your communities' chats; /chats/?community=<id> opens that one. The
+    page switches between the list and a chat without reloading. (The chat
+    API and socket come with every signed-in page, for the unread badge.)"""
+
+    vue_component = 'pages/chats/main.vue'
+    page_title = 'Chats'
 
 
 class ChatListAPIView(APIView):

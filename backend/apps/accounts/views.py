@@ -4,6 +4,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.core.exceptions import ValidationError
 from django.shortcuts import redirect
+from django.templatetags.static import static
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -13,7 +14,9 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.communities.models import cover_url
 from apps.communities.serializers import category_choices, cover_choices
+from apps.notifications.services import unread_count
 
 from .serializers import (
     GoogleSignInSerializer, ProfileSerializer, SignInSerializer, SignUpSerializer, UserSerializer, avatar_choices,
@@ -89,6 +92,27 @@ class AuthPageView(GuestOnlyMixin, VuePageView):
         }
 
 
+class LandingPageView(GuestOnlyMixin, VuePageView):
+    """What Circle is and does, shown at / to visitors who aren't signed in,
+    with the way to sign in or sign up."""
+
+    vue_component = 'pages/landing/main.vue'
+    page_title = 'Find your people nearby'
+
+    def get_page_props(self):
+        return {
+            'signinUrl': reverse('signin'),
+            'signupUrl': reverse('signup'),
+            # Pictures for the sample communities in the preview.
+            'covers': {key: cover_url(key) for key in ('sports-football', 'tech-code', 'music-guitar')},
+            # Scenes of people meeting up (frontend/pages/landing/art/).
+            'scenes': {
+                name: static(f'pages/landing/art/{name}.svg')
+                for name in ('friends-circle', 'meet-new-people', 'coffee-meetup', 'celebrate-together', 'circle-of-friends')
+            },
+        }
+
+
 # Decimal places kept when showing other people on the map (~1 km), so
 # their exact address isn't shared with everyone.
 MAP_PEOPLE_PRECISION = 2
@@ -116,6 +140,19 @@ def map_people(exclude, users=None):
     ]
 
 
+def nav_urls():
+    """{menu id: url} for BaseLayout's sidebar menu (ids as in its NAV)."""
+    return {
+        'foryou': reverse('home'),
+        'discover': reverse('discover'),
+        'communities': reverse('my-communities'),
+        'chats': reverse('chats'),
+        'notifications': reverse('notifications'),
+        'create': reverse('create-community'),
+        'profile': reverse('profile'),
+    }
+
+
 class AppPageView(LoginRequiredMixin, VuePageView):
     """A signed-in page. Its .vue file wraps its content in
     components/BaseLayout.vue (sidebar, header band, right panel), which
@@ -126,6 +163,8 @@ class AppPageView(LoginRequiredMixin, VuePageView):
             'user': UserSerializer(self.request.user).data,
             'homeUrl': reverse('home'),
             'profileUrl': reverse('profile'),
+            # {menu id: url}: the pages in the sidebar menu.
+            'navUrls': nav_urls(),
             'signoutApi': reverse('api-signout'),
             'signinUrl': reverse('signin'),
             # Leaflet URL template, e.g. /maps/tiles/{z}/{x}/{y}.png
@@ -144,29 +183,41 @@ class AppPageView(LoginRequiredMixin, VuePageView):
             'chatsApi': reverse('api-chats'),
             'chatSocketPath': '/ws/chat/',
             'chatMaxFileMb': settings.CHAT_MAX_FILE_MB,
+            # New posts and communities since Notifications was last opened.
+            'notificationsUnread': unread_count(self.request.user),
         }
 
 
 class HomePageView(AppPageView):
-    """For You (the default), Discover, My Communities and the sections
-    still to be built. /?tab=discover opens on that section; the page
-    switches sections without reloading."""
+    """For You: posts picked for the user from every community, with
+    communities to join in between. Old /?tab=<section> links are sent on
+    to that section's own page."""
 
     vue_component = 'pages/home/main.vue'
-    page_title = 'Home'
-    tabs = ('foryou', 'discover', 'communities', 'chats', 'create')
+    page_title = 'For You'
+
+    def dispatch(self, request, *args, **kwargs):
+        # Visitors who aren't signed in see what Circle is about first.
+        if not request.user.is_authenticated and 'tab' not in request.GET:
+            return LandingPageView.as_view()(request, *args, **kwargs)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, *args, **kwargs):
+        url = nav_urls().get(request.GET.get('tab', ''))
+        if url and url != reverse('home'):
+            community = request.GET.get('community', '')
+            return redirect(f'{url}?community={community}' if community.isdigit() else url)
+        return super().get(request, *args, **kwargs)
 
     def get_page_props(self):
-        tab = self.request.GET.get('tab', '')
         return {
             **super().get_page_props(),
-            'tab': tab if tab in self.tabs else 'foryou',
-            # For You: the shuffled feed and the communities to suggest.
+            # The ranked feed and the communities to suggest.
             'feedApi': reverse('api-feed'),
             'suggestionsApi': reverse('api-feed-communities'),
-            # Posts feed on the My Communities tab (also likes, comments...).
+            # Likes, comments... on the posts.
             'postsApi': reverse('api-posts'),
-            # Create Community tab.
+            # Joining a suggested community.
             'communitiesApi': reverse('api-communities'),
         }
 

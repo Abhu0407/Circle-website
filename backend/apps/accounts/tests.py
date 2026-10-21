@@ -20,9 +20,18 @@ class AuthTests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertContains(response, 'id="app"')
 
-    def test_home_requires_login(self):
+    def test_home_shows_landing_page_to_guests(self):
         response = self.client.get(reverse('home'))
-        self.assertRedirects(response, f"{reverse('signin')}?next=/")
+        self.assertContains(response, 'pages/landing/main.vue')
+        self.assertContains(response, reverse('signup'))
+
+    def test_signed_in_users_skip_landing_page(self):
+        self.client.force_login(self.user)
+        self.assertContains(self.client.get(reverse('home')), 'pages/home/main.vue')
+
+    def test_home_sections_require_login(self):
+        response = self.client.get(reverse('home') + '?tab=discover')
+        self.assertRedirects(response, f"{reverse('signin')}?next=/%3Ftab%3Ddiscover")
 
     def test_signup_creates_user_and_logs_in(self):
         response = self.client.post(reverse('api-signup'), {
@@ -116,7 +125,7 @@ class GoogleSignInTests(TestCase):
         User.objects.create_user('erin', 'dana@gmail.com', 'S3cure-pass!', is_active=False)
         response, _ = self.post(self.google_info())
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(self.client.get(reverse('home')).status_code, 302)
+        self.assertNotIn('_auth_user_id', self.client.session)
 
     @override_settings(GOOGLE_CLIENT_ID='')
     def test_not_configured(self):
@@ -152,12 +161,25 @@ class ProfileTests(TestCase):
         people = response.context['page_props']['mapPeople']
         self.assertEqual([(p['username'], p['lat'], p['lng']) for p in people], [('bob', 19.08, 72.88)])
 
-    def test_home_opens_on_requested_section(self):
-        response = self.client.get(reverse('home') + '?tab=chats')
-        self.assertContains(response, 'pages/home/main.vue')
-        self.assertContains(response, '"tab": "chats"')
+    def test_old_section_links_go_to_their_page(self):
+        response = self.client.get(reverse('home') + '?tab=discover')
+        self.assertRedirects(response, reverse('discover'))
+        response = self.client.get(reverse('home') + '?tab=chats&community=3')
+        self.assertRedirects(response, reverse('chats') + '?community=3', fetch_redirect_response=False)
         response = self.client.get(reverse('home') + '?tab=nope')
-        self.assertContains(response, '"tab": "foryou"')
+        self.assertContains(response, 'pages/home/main.vue')
+
+    def test_every_section_has_its_own_page(self):
+        for name, component in [
+            ('home', 'pages/home/main.vue'),
+            ('discover', 'pages/discover/main.vue'),
+            ('my-communities', 'pages/my-communities/main.vue'),
+            ('chats', 'pages/chats/main.vue'),
+            ('create-community', 'pages/create/main.vue'),
+        ]:
+            response = self.client.get(reverse(name))
+            self.assertContains(response, component, msg_prefix=name)
+            self.assertContains(response, '"navUrls"', msg_prefix=name)
 
     def test_update_profile_fields(self):
         response = self.patch({'name': 'Alice A', 'location': 'Pune', 'interested_category': ['tech', 'outdoors']})

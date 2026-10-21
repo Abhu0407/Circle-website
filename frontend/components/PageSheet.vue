@@ -3,7 +3,7 @@
   title on the dark header band, then one white sheet holding the page.
   Usage:
     <PageSheet title="My Communities">...</PageSheet>
-    <PageSheet title="Community" back-url="/?tab=communities" back-label="My Communities">...</PageSheet>
+    <PageSheet title="Community" back-url="/communities/" back-label="My Communities">...</PageSheet>
 -->
 <template>
   <section class="page">

@@ -6,6 +6,7 @@
   <BaseLayout
     :user="me"
     active="profile"
+    :nav-urls="navUrls"
     :home-url="homeUrl"
     :profile-url="profileUrl"
     :signout-api="signoutApi"
@@ -15,7 +16,7 @@
     :chat-socket-path="chatSocketPath"
     :chat-max-file-mb="chatMaxFileMb"
     :map-people="mapPeople"
-    :events="events"
+    :notifications-unread="notificationsUnread"
   >
     <section class="profile">
       <h1 class="profile__title">My Profile</h1>
@@ -363,11 +364,12 @@ import Modal from '../../components/Modal.vue';
 const props = defineProps({
   user: { type: Object, required: true },
   homeUrl: { type: String, required: true },
+  navUrls: { type: Object, required: true },
   profileUrl: { type: String, required: true },
   signoutApi: { type: String, required: true },
   signinUrl: { type: String, required: true },
   mapPeople: { type: Array, default: () => [] },
-  events: { type: Array, default: () => [] },
+  notificationsUnread: { type: Number, default: 0 },
   meApi: { type: String, required: true },
   usernameCheckApi: { type: String, required: true },
   mapTileUrl: { type: String, required: true },

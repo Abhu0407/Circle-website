@@ -24,8 +24,37 @@ def distance_km(lat1, lng1, lat2, lng2):
     return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(a))
 
 # ---------------------------------------------------------------------------
-# Page view
+# Page views
 # ---------------------------------------------------------------------------
+
+class DiscoverPageView(AppPageView):
+    """Browse and search every community; join from the cards."""
+
+    vue_component = 'pages/discover/main.vue'
+    page_title = 'Discover'
+
+    def get_page_props(self):
+        return {**super().get_page_props(), 'communitiesApi': reverse('api-communities')}
+
+
+class MyCommunitiesPageView(AppPageView):
+    """The communities the user joined, and their posts."""
+
+    vue_component = 'pages/my-communities/main.vue'
+    page_title = 'My Communities'
+
+    def get_page_props(self):
+        return {**super().get_page_props(), 'postsApi': reverse('api-posts')}
+
+
+class CreateCommunityPageView(AppPageView):
+    """The form to start a new community."""
+
+    vue_component = 'pages/create/main.vue'
+    page_title = 'Create a Community'
+
+    def get_page_props(self):
+        return {**super().get_page_props(), 'communitiesApi': reverse('api-communities')}
 
 
 class CommunityPageView(AppPageView):

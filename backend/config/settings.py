@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'apps.maps',
     'apps.posts',
     'apps.chat',
+    'apps.notifications',
 ]
 
 MIDDLEWARE = [

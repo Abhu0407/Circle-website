@@ -41,6 +41,9 @@ class User(AbstractUser):
     )
     # A key from AVATARS, or blank for none.
     avatar = models.CharField(max_length=50, blank=True, choices=AVATARS)
+    # When the Notifications page was last opened; newer posts and
+    # communities count as new (see apps/notifications/services.py).
+    notifications_seen_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.username

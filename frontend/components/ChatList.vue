@@ -20,7 +20,7 @@
     <ul v-else class="boxes">
       <li v-for="c in shown" :key="c.id">
         <a
-          :href="`?tab=chats&community=${c.id}`"
+          :href="`?community=${c.id}`"
           class="box"
           :class="{ 'box--unread': c.unread_count }"
           @click.prevent="$emit('open', c.id)"

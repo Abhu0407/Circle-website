@@ -52,12 +52,12 @@ Browser ──> Django TemplateView (apps/accounts/views.py)
 | `backend/templates/base.html`        | The single Django template every page uses                                                                                                                |
 | `backend/apps/accounts/models.py`    | Custom `User` model (unique email)                                                                                                                        |
 | `backend/apps/accounts/views.py`     | Page views (`VuePageView`) + JSON API views                                                                                                               |
-| `backend/apps/accounts/urls.py`      | `/`, `/profile/`, `/signin/`, `/signup/`, `/api/auth/...`                                                                                                 |
+| `backend/apps/accounts/urls.py`      | `/` (For You), `/profile/`, `/signin/`, `/signup/`, `/api/auth/...`; `/discover/`, `/communities/`, `/create/`, `/chats/` and `/notifications/` are in their apps |
 | `frontend/main.js`                   | Mounts the requested `.vue` file                                                                                                                          |
 | `frontend/api.mjs`                   | `fetch` helper (CSRF + error parsing)                                                                                                                     |
 | `frontend/pages/<page>/main.vue`     | Entry file Django mounts for each page                                                                                                                    |
-| `frontend/pages/<page>/<Page>.vue`   | The page UI (`auth/Auth.vue` = sign in + sign up, `home/Home.vue` = For You, Discover, ..., `profile/Profile.vue`)                                        |
-| `backend/apps/posts/feed.py`         | For You ranking: shuffled posts weighted by interests + activity, and suggested communities                                                               |
+| `frontend/pages/<page>/<Page>.vue`   | The page UI (`auth/Auth.vue` = sign in + sign up, `home/Home.vue` = For You, `discover/`, `my-communities/`, `chats/`, `notifications/`, `create/`, `profile/`, `community/`, `post/`) |
+| `backend/apps/posts/feed.py`         | For You ranking: posts scored by joined communities, interests, activity, freshness...; and suggested communities |
 | `frontend/components/BaseLayout.vue` | Frame shared by every signed-in page: sidebar, header band, right panel                                                                                   |
 | `frontend/components/`               | Also `ActionButton.vue` (the app's button), `Modal.vue`, `MapView.vue`, `AuthLayout.vue`, `FormField.vue`, `BrandLogo.vue`, `Icon.vue`, `ActivityArt.vue` |
 
@@ -86,15 +86,21 @@ Browser ──> Django TemplateView (apps/accounts/views.py)
 
 ## For You (the home page)
 
-`/` opens **For You**; Discover is at `/?tab=discover`.
+`/` opens **For You**. Every menu item is its own page: `/discover/`,
+`/communities/` (My Communities), `/chats/`, `/create/` and `/profile/`
+(old `/?tab=<section>` links redirect there).
 
 - **Posts** (`GET /api/feed/?seed=&offset=`): other people's posts from every
-  community, in a weighted random order. A post's weight is
-  `1 + 4·(category is an interest) + 3·(activity in that category, 0–1)`,
-  roughly doubled for posts from the last few days. Activity counts
-  communities joined, posts written, comments and likes. The page picks a
-  random `seed`, so each visit (or **Shuffle**) gives a new order while
-  pages of one visit follow on without repeats.
+  community, best match first. A post scores higher when it's from a
+  community you joined, in a category you picked as an interest or are
+  active in, by an author whose posts you like or comment on, from a
+  community near you, and when it has more likes and comments. The score
+  halves every 2 days (down to a floor), and posts you already liked or
+  commented on drop down. The tuning values are at the top of `feed.py`.
+  Each visit picks a random `seed` that nudges every score a little, so a
+  refresh gives a slightly different order, while pages of one visit
+  follow on without repeats. One community's posts are spread out instead
+  of filling the top.
 - **Suggested communities** (`GET /api/feed/communities/`): communities you
   haven't joined, scored by your interests, your activity, posts of theirs you
   liked or commented on, members you share communities with, distance and
@@ -111,9 +117,9 @@ ahead; files that only pretend to be videos are refused.
 
 ## Chats
 
-`/?tab=chats` lists every community you joined as a box, latest message
+`/chats/` lists every community you joined as a box, latest message
 first, with the number of unread messages. Opening one
-(`/?tab=chats&community=<id>`) shows its group chat with all its members.
+(`/chats/?community=<id>`) shows its group chat with all its members.
 The **Chats** item in the sidebar shows the total unread count on every page.
 
 - **Live:** messages go over a WebSocket (`/ws/chat/`, Django Channels) and
@@ -159,9 +165,22 @@ run with an ASGI server (`daphne config.asgi:application`), and if you run
 more than one process, `pip install channels-redis` and set `REDIS_URL` in
 `.env` so messages reach users connected to any process.
 
+## Notifications
+
+`/notifications/` lists every post uploaded and every community created by
+other people, newest first, grouped by day, with **All / Posts /
+Communities** filters and a "Show older" button. Nothing extra is stored:
+the list is read straight from posts and communities
+(`backend/apps/notifications/services.py`, `GET /api/notifications/?kind=&before=`).
+
+The **Notifications** item in the sidebar shows how many appeared since you
+last opened the page (`User.notifications_seen_at`; a new account starts at
+zero). Opening the page clears the count; what was new stays highlighted
+during that visit.
+
 ## Tests
 
 ```powershell
 cd backend
-python manage.py test apps.accounts apps.chat
+python manage.py test apps.accounts apps.chat apps.notifications
 ```

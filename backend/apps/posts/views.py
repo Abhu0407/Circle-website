@@ -103,9 +103,9 @@ class PostListCreateAPIView(generics.ListCreateAPIView):
 
 class ForYouFeedAPIView(APIView):
     """GET ?seed=<text>&offset=<n> -> {results, next}: the For You feed.
-    Other people's posts from every community, in a random order that
-    favours the user's interests and activity (see feed.py). The same seed
-    gives the same order, so pages follow on; a new seed reshuffles."""
+    Other people's posts from every community, best match for the user
+    first (see feed.py). The seed varies the order a little: the same seed
+    gives the same order, so pages follow on; a new one changes it."""
 
     permission_classes = [permissions.IsAuthenticated]
     page_size = 10
