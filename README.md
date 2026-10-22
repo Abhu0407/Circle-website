@@ -1,186 +1,243 @@
 # Circle
 
-Django backend + Vue 3 frontend, served together by `python manage.py runserver`.
-No Node/npm build is needed: `.vue` files are compiled in the browser by
-[vue3-sfc-loader](https://github.com/FranckFreiburger/vue3-sfc-loader).
+Circle is a community website. People sign up, join communities near them,
+share posts with photos or videos, chat live with community members and get
+notifications.
 
-## Run
+- **Backend:** Django (Python) with Django REST Framework and Django Channels (live chat)
+- **Frontend:** Vue 3. You do **not** need Node.js or npm. The browser builds the
+  `.vue` files itself with [vue3-sfc-loader](https://github.com/FranckFreiburger/vue3-sfc-loader).
+- **Database:** SQLite (one file, `backend/db.sqlite3`). You don't need to install a database.
+
+One command, `python manage.py runserver`, runs the whole website: pages, API and live chat.
+
+---
+
+## Contents
+
+1. [What you need](#1-what-you-need)
+2. [Run the project (first time)](#2-run-the-project-first-time)
+3. [Run the project (every next time)](#3-run-the-project-every-next-time)
+4. [Settings in the `.env` file](#4-settings-in-the-env-file)
+5. [Demo data](#5-demo-data)
+6. [Errors and how to fix them](#6-errors-and-how-to-fix-them)
+7. [How the project is organised](#7-how-the-project-is-organised)
+8. [Tests](#10-tests)
+
+---
+
+## 1. What you need
+
+| Tool                                        | Version       | Why                                                                           |
+| ------------------------------------------- | ------------- | ----------------------------------------------------------------------------- |
+| [Python](https://www.python.org/downloads/) | 3.12 or newer | Runs the backend. On Windows, tick **"Add Python to PATH"** while installing. |
+| [Git](https://git-scm.com/downloads)        | any           | To download the code                                                          |
+| Internet connection                         |               | Vue is loaded from a CDN, and maps and Google sign in need it                 |
+
+Check that Python works:
+
+```powershell
+python --version
+```
+
+---
+
+## 2. Run the project (first time)
+
+Open a terminal in the project folder (`Circle-website`) and run these commands one by one.
+
+**Windows (PowerShell):**
+
+```powershell
+cd backend
+
+# 1. Make a virtual environment (a private folder for this project's Python packages)
+python -m venv venv
+
+# 2. Turn it on. You will see (venv) at the start of the line.
+venv\Scripts\activate
+
+# 3. Install the packages
+pip install -r requirements.txt
+
+# 4. Create the database tables
+python manage.py makemigrations accounts communities posts chat
+python manage.py migrate
+
+# 5. (Optional) Make an admin account for /admin/
+python manage.py createsuperuser
+
+# 6. (Optional) Add demo users, communities and posts
+python manage.py seed_demo
+
+# 7. Start the website
+python manage.py runserver
+```
+
+**macOS / Linux:** the same, except step 1 and 2:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+Now open **http://127.0.0.1:8000/** in your browser.
+
+> **Why the app names in `makemigrations`?** The `migrations/` folders are not
+> saved in Git (see `.gitignore`). On a fresh copy they don't exist, and plain
+> `python manage.py makemigrations` then creates nothing. Naming the apps
+> creates them.
+
+To stop the server press **Ctrl + C**.
+
+---
+
+## 3. Run the project (every next time)
 
 ```powershell
 cd backend
 venv\Scripts\activate
-pip install -r requirements.txt
-python manage.py makemigrations
-python manage.py migrate
 python manage.py runserver
 ```
 
-Then open http://127.0.0.1:8000/signin/. Sign in and sign up share one page
-(`/signin/` and `/signup/` both load it) and switch tabs without a reload.
+If you (or someone else) changed a `models.py` file, also run this before `runserver`:
 
-### Google sign in (optional)
-
-1. In [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials),
-   create an **OAuth client ID** of type **Web application**.
-2. Under **Authorized JavaScript origins** add `http://127.0.0.1:8000` and
-   `http://localhost:8000` (plus your production domain later).
-3. Put the client ID in `backend/.env` (git-ignored) and restart the server:
-   ```
-   GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
-   ```
-
-The "Sign in with Google" / "Sign up with Google" button is always shown on
-`/signin/` and `/signup/`; until `GOOGLE_CLIENT_ID` is set, clicking it just
-shows a "not set up yet" message. The browser gets an ID token from Google and
-posts it to `/api/auth/google/`; Django verifies it, signs in the account with
-that email, or creates one (username from the email, no password).
-
-## How it fits together
-
-```
-Browser ──> Django TemplateView (apps/accounts/views.py)
-              renders backend/templates/base.html
-                 ├─ data-component="/static/pages/auth/main.vue"     (which .vue to mount)
-                 ├─ <script id="page-props">{...}</scripdef __str__(self):
-        return self.user.usernamet>       (props from the view)
-                 └─ frontend/main.js  ──loads──> frontend/pages/*.vue
-                                                   └─ calls /api/auth/* (JSON, DRF)
+```powershell
+python manage.py makemigrations accounts communities posts chat
+python manage.py migrate
 ```
 
-| Path                                 | Purpose                                                                                                                                                   |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `backend/templates/base.html`        | The single Django template every page uses                                                                                                                |
-| `backend/apps/accounts/models.py`    | Custom `User` model (unique email)                                                                                                                        |
-| `backend/apps/accounts/views.py`     | Page views (`VuePageView`) + JSON API views                                                                                                               |
-| `backend/apps/accounts/urls.py`      | `/` (For You), `/profile/`, `/signin/`, `/signup/`, `/api/auth/...`; `/discover/`, `/communities/`, `/create/`, `/chats/` and `/notifications/` are in their apps |
-| `frontend/main.js`                   | Mounts the requested `.vue` file                                                                                                                          |
-| `frontend/api.mjs`                   | `fetch` helper (CSRF + error parsing)                                                                                                                     |
-| `frontend/pages/<page>/main.vue`     | Entry file Django mounts for each page                                                                                                                    |
-| `frontend/pages/<page>/<Page>.vue`   | The page UI (`auth/Auth.vue` = sign in + sign up, `home/Home.vue` = For You, `discover/`, `my-communities/`, `chats/`, `notifications/`, `create/`, `profile/`, `community/`, `post/`) |
-| `backend/apps/posts/feed.py`         | For You ranking: posts scored by joined communities, interests, activity, freshness...; and suggested communities |
-| `frontend/components/BaseLayout.vue` | Frame shared by every signed-in page: sidebar, header band, right panel                                                                                   |
-| `frontend/components/`               | Also `ActionButton.vue` (the app's button), `Modal.vue`, `MapView.vue`, `AuthLayout.vue`, `FormField.vue`, `BrandLogo.vue`, `Icon.vue`, `ActivityArt.vue` |
+If `requirements.txt` changed, run `pip install -r requirements.txt` again.
 
-### Adding a new page
+---
 
-1. Create `frontend/pages/mypage/MyPage.vue` (the UI) and
-   `frontend/pages/mypage/main.vue` (the entry; it just renders `<MyPage />`).
-   For a signed-in page, wrap `MyPage.vue`'s content in `<BaseLayout>` so it
-   gets the sidebar, header band and right panel (see `profile/Profile.vue`).
-2. Add a view. Signed-in pages extend `AppPageView`, which requires login
-   and passes the props `BaseLayout` needs (`user`, `homeUrl`, ...):
+## 4. Settings in the `.env` file
 
-   ```python
-   class MyPageView(AppPageView):          # or VuePageView for a public page
-       vue_component = 'pages/mypage/main.vue'
-       page_title = 'My page'
+Some settings are read from a file named **`backend/.env`**. You make this file
+yourself; it is not in Git, so secret values stay on your computer.
 
-       def get_page_props(self):
-           return {**super().get_page_props(), 'hello': 'world'}   # props on MyPage.vue
-   ```
+**All of them are optional.** The project runs without a `.env` file.
 
-3. Add it to `urls.py`.
+```ini
+# backend/.env  (example)
 
-> Note: plain JS modules imported from `.vue` files must use the `.mjs`
-> extension (vue3-sfc-loader only treats `.mjs` as ES modules).
+# Turns on "Sign in with Google". See below how to get it.
+GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
 
-## For You (the home page)
+# Biggest file a user can send in chat, in MB (default 25)
+CHAT_MAX_FILE_MB=25
 
-`/` opens **For You**. Every menu item is its own page: `/discover/`,
-`/communities/` (My Communities), `/chats/`, `/create/` and `/profile/`
-(old `/?tab=<section>` links redirect there).
+# Biggest video a post can have, in MB (default 50)
+POST_MAX_VIDEO_MB=50
 
-- **Posts** (`GET /api/feed/?seed=&offset=`): other people's posts from every
-  community, best match first. A post scores higher when it's from a
-  community you joined, in a category you picked as an interest or are
-  active in, by an author whose posts you like or comment on, from a
-  community near you, and when it has more likes and comments. The score
-  halves every 2 days (down to a floor), and posts you already liked or
-  commented on drop down. The tuning values are at the top of `feed.py`.
-  Each visit picks a random `seed` that nudges every score a little, so a
-  refresh gives a slightly different order, while pages of one visit
-  follow on without repeats. One community's posts are spread out instead
-  of filling the top.
-- **Suggested communities** (`GET /api/feed/communities/`): communities you
-  haven't joined, scored by your interests, your activity, posts of theirs you
-  liked or commented on, members you share communities with, distance and
-  size. Each comes with a `reason` ("You like Sports", "Near you"...). They
-  appear between posts as rows you can scroll sideways.
+# Tells OpenStreetMap who you are. Put your email before going live.
+MAPS_USER_AGENT=Circle/1.0 (you@example.com)
 
-## Posts with photos or videos
+# Map picture server and place search server (defaults shown)
+MAP_TILE_URL=https://tile.openstreetmap.org/{z}/{x}/{y}.png
+PHOTON_URL=https://photon.komoot.io
 
-A post can have a photo (up to 5 MB) or a video (MP4, MOV, WebM or OGV, up
-to `POST_MAX_VIDEO_MB`, default 50), not both. The composer shows upload
-progress. Videos are stored in `media/post_videos/` and played through
-`/api/posts/<id>/video/` (signed-in users only), which lets the player skip
-ahead; files that only pretend to be videos are refused.
+# Only for live servers with more than one process (needs: pip install channels-redis)
+# REDIS_URL=redis://127.0.0.1:6379
+```
 
-## Chats
+| Field               | Needed?                                | Default                           | What it does                                                                        |
+| ------------------- | -------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------- |
+| `GOOGLE_CLIENT_ID`  | No                                     | empty                             | Turns on the Google sign in button. Empty means clicking it shows "not set up yet". |
+| `CHAT_MAX_FILE_MB`  | No                                     | `25`                              | Size limit for each photo, video or file sent in chat                               |
+| `POST_MAX_VIDEO_MB` | No                                     | `50`                              | Size limit for a video in a post                                                    |
+| `MAPS_USER_AGENT`   | Before going live                      | `CircleWebsite/1.0 (development)` | Name and email sent to OpenStreetMap                                                |
+| `MAP_TILE_URL`      | No                                     | OpenStreetMap                     | Where the map pictures come from                                                    |
+| `PHOTON_URL`        | No                                     | `https://photon.komoot.io`        | Place search ("type an address")                                                    |
+| `REDIS_URL`         | Only with more than one server process | not set                           | Shares live chat messages between processes                                         |
 
-`/chats/` lists every community you joined as a box, latest message
-first, with the number of unread messages. Opening one
-(`/chats/?community=<id>`) shows its group chat with all its members.
-The **Chats** item in the sidebar shows the total unread count on every page.
+After you change `.env`, **restart the server** (Ctrl + C, then `runserver` again).
 
-- **Live:** messages go over a WebSocket (`/ws/chat/`, Django Channels) and
-  reach everyone in the chat instantly. `daphne` in `INSTALLED_APPS` makes
-  `python manage.py runserver` serve the sockets too, so nothing else is
-  needed in development. If the connection drops, the page reconnects and
-  fetches what it missed.
-- **Private:** only signed-in members of a community can read or send its
-  messages (checked on every request and socket message). Sockets are only
-  accepted from pages on this site (`ALLOWED_HOSTS`), so other sites can't
-  open one with your cookie. Message text is shown as plain text, never HTML.
-  Sending is limited to 10 messages per 10 seconds; messages are at most
-  2000 characters. Leaving a community stops its messages right away.
-- **Photos, videos and files:** attach them with the 📎 button, drag them
-  onto the chat, or paste them (up to 10 at a time, `CHAT_MAX_FILE_MB`
-  each, default 25). Photos and videos show in the chat; other files show
-  as a card to download. They are stored in `backend/chat_files/`, **not**
-  the public `media/` folder, and only sent (by `/api/chats/files/<id>/`)
-  to members of that community. Photos are re-saved without their hidden
-  metadata (such as the GPS location they were taken at); files that only
-  pretend to be photos or videos are treated as plain downloads; program and
-  script files (`.exe`, `.bat`, `.js`, `.html`, `.svg`...) are refused.
-- **Emoji:** the 😊 button opens a picker (search, categories, recently
-  used). The emoji list is in `frontend/emoji.mjs`, so it works offline. A
-  message of only 1-3 emoji is shown large.
-- **Unread:** each user has a read marker per community (`ChatRead`).
-  Messages after it that someone else wrote are unread; opening the chat
-  moves it forward. New members start with nothing unread.
+### How to get a `GOOGLE_CLIENT_ID`
 
-| Path                               | Purpose                                                   |
-| ---------------------------------- | --------------------------------------------------------- |
-| `backend/apps/chat/services.py`    | Membership checks, sending, history, unread counts        |
-| `backend/apps/chat/consumers.py`   | The live socket                                           |
-| `backend/apps/chat/attachments.py` | Checks and cleans photos, videos and files before saving  |
-| `backend/apps/chat/views.py`       | `GET /api/chats/`, `/api/chats/<id>/messages/`, `/read/`  |
-| `frontend/chat.mjs`                | The shared socket and live unread counts                  |
-| `frontend/components/ChatList.vue` | Community boxes with unread badges                        |
-| `frontend/components/ChatRoom.vue` | One community's chat                                      |
-| `frontend/components/EmojiPicker.vue` | The emoji picker (emoji list: `frontend/emoji.mjs`)    |
+1. Open [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials).
+2. Click **Create credentials → OAuth client ID**, type **Web application**.
+3. Under **Authorized JavaScript origins** add `http://127.0.0.1:8000` and
+   `http://localhost:8000` (and your real domain later).
+4. Copy the client ID into `backend/.env` as `GOOGLE_CLIENT_ID=...` and restart the server.
 
-**Going live:** serve over HTTPS (the page then uses `wss://` automatically),
-run with an ASGI server (`daphne config.asgi:application`), and if you run
-more than one process, `pip install channels-redis` and set `REDIS_URL` in
-`.env` so messages reach users connected to any process.
+---
 
-## Notifications
+## 5. Demo data
 
-`/notifications/` lists every post uploaded and every community created by
-other people, newest first, grouped by day, with **All / Posts /
-Communities** filters and a "Show older" button. Nothing extra is stored:
-the list is read straight from posts and communities
-(`backend/apps/notifications/services.py`, `GET /api/notifications/?kind=&before=`).
+An empty website is hard to test. This command adds 120 users, 36 communities,
+posts with photos, likes and comments:
 
-The **Notifications** item in the sidebar shows how many appeared since you
-last opened the page (`User.notifications_seen_at`; a new account starts at
-zero). Opening the page clears the count; what was new stays highlighted
-during that visit.
+```powershell
+python manage.py seed_demo                  # add demo data
+python manage.py seed_demo --join yourname  # also put your account in every demo community
+python manage.py seed_demo --reset          # delete demo data and add it again
+python manage.py seed_demo --clear          # only delete demo data
+```
 
-## Tests
+Every demo user's email ends with `@demo.circle` and the password is **`Abcd@1234`**.
+
+---
+
+## 6. Errors and how to fix them
+
+These are the errors people hit most often.
+
+| Error                                                                                       | Why it happens                                                   | Fix                                                                                                          |
+| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `venv\Scripts\activate cannot be loaded because running scripts is disabled on this system` | PowerShell blocks scripts by default                             | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then activate again.                         |
+| `ModuleNotFoundError: No module named 'django'` (or `daphne`, `channels`, `PIL`...)         | The virtual environment is not on, or packages are not installed | Run `venv\Scripts\activate`, then `python -m pip install -r requirements.txt`.                               |
+| `can't open file '...manage.py'`                                                            | You are in the wrong folder                                      | `cd backend` first. `manage.py` is inside `backend/`.                                                        |
+| `no such table: ...` or `no such column: ...`                                               | Database tables were never made, or a model changed              | `python manage.py makemigrations accounts communities posts chat` then `python manage.py migrate`            |
+| `Error: That port is already in use.`                                                       | Another server is already running on port 8000                   | Close the other terminal, or use another port: `python manage.py runserver 8001`                             |
+| Blank white page                                                                            | Vue failed to load or a `.vue` file has an error                 | Press **F12 → Console** in the browser and read the red error. No internet means the Vue CDN can't load.     |
+| Your change to a `.vue` file doesn't show                                                   | Browser cache                                                    | Reload with **Ctrl + F5**.                                                                                   |
+| Google button says "not set up yet"                                                         | `GOOGLE_CLIENT_ID` is not set                                    | See [How to get a GOOGLE_CLIENT_ID](#how-to-get-a-google_client_id), then restart the server.                |
+
+### Still stuck?
+
+1. Read the **full error** in the terminal where `runserver` runs. The last lines say what went wrong and which file/line.
+2. For page problems, open the browser **Console** (F12) and the **Network** tab.
+3. Run the tests (section 10). A failing test often points at the broken part.
+
+---
+
+## 7. How the project is organised
+
+```
+Circle-website/
+├── backend/                     Django (Python)
+│   ├── manage.py                Run every Django command from here
+│   ├── requirements.txt         Python packages
+│   ├── .env                     Your local settings (you create it, not in Git)
+│   ├── config/
+│   │   ├── settings.py          All settings
+│   │   ├── urls.py              Joins the URLs of every app
+│   │   └── asgi.py              Serves pages + live chat sockets
+│   ├── templates/base.html      The ONE HTML template every page uses
+│   └── apps/
+│       ├── accounts/            Users, sign in/up, Google sign in, profile, For You page
+│       ├── communities/         Communities (create, join, leave, discover)
+│       ├── posts/               Posts, likes, comments, For You ranking (feed.py), seed_demo
+│       ├── chat/                Live group chat, attachments, unread counts
+│       ├── notifications/       Notifications page
+│       └── maps/                Map tiles and place search (proxied through our site)
+└── frontend/                    Vue 3 (served as static files)
+    ├── main.js                  Loads and mounts the right .vue page
+    ├── api.mjs                  Helpers to call the Django API
+    ├── chat.mjs                 Shared chat socket and unread counts
+    ├── styles/global.css        Colours, fonts and shared styles
+    ├── components/              Reusable parts (BaseLayout, ActionButton, Modal, PostCard...)
+    └── pages/<page>/            One folder per page: main.vue (entry) + <Page>.vue (UI)
+```
+
+---
+
+## 8. Tests
 
 ```powershell
 cd backend
-python manage.py test apps.accounts apps.chat apps.notifications
+python manage.py test apps
 ```
+
+Run one app only, for example: `python manage.py test apps.chat`.
