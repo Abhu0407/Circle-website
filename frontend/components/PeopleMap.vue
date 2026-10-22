@@ -105,11 +105,9 @@ onMounted(async () => {
   }
   if (!el.value) return; // unmounted while loading
 
-  map = L.map(el.value, { scrollWheelZoom: props.large, boxZoom: false, attributionControl: true });
-  map.attributionControl.setPrefix(false);
+  map = L.map(el.value, { scrollWheelZoom: props.large, boxZoom: false, attributionControl: false });
   L.tileLayer(props.tileUrl, {
     maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
   }).addTo(map);
   layer = L.layerGroup().addTo(map);
   drawPins();

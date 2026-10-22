@@ -69,12 +69,10 @@ onMounted(async () => {
     touchZoom: props.interactive,
     boxZoom: false,
     keyboard: props.interactive,
-    attributionControl: true,
+    attributionControl: false,
   });
-  map.attributionControl.setPrefix(false);
   L.tileLayer(props.tileUrl, {
     maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
   }).addTo(map);
 
   if (hasPoint()) map.setView([props.lat, props.lng], POINT_ZOOM);

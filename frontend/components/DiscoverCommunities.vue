@@ -1,6 +1,6 @@
 <!--
-  Home's Discover tab (inside the page's PageSheet): every community,
-  nearest first. Search box plus a Filters button (categories, distance
+  Home's Discover tab (inside the page's PageSheet): every community you
+  haven't joined, nearest first. Search box plus a Filters button (categories, distance
   from your Profile location); active filters show as removable chips.
   Join right from a card.
   Emits `joined` with the community, so the page can update My Communities.
@@ -111,7 +111,7 @@
       <ActionButton icon="close" label="Clear filters" @click="clearFilters" />
     </EmptyState>
 
-    <EmptyState v-else-if="!loading" icon="compass" text="There are no communities yet. Start the first one!">
+    <EmptyState v-else-if="!loading" icon="compass" text="No new communities to join right now. Start one!">
       <ActionButton icon="plus" label="Create a community" @click="$emit('create')" />
     </EmptyState>
   </div>
@@ -169,7 +169,8 @@ async function load() {
     // apiGet takes an object, which can't repeat `category`, so build the URL here.
     const qs = params.toString();
     const data = await apiGet(qs ? `${props.communitiesApi}?${qs}` : props.communitiesApi);
-    if (id === request) results.value = data;
+    // Leave out communities you're already in; one joined here keeps its card until the next search.
+    if (id === request) results.value = data.filter((c) => !c.is_member);
   } catch (err) {
     if (id === request) error.value = parseErrors(err).message || 'Could not load communities.';
   } finally {
