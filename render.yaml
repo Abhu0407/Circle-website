@@ -1,0 +1,51 @@
+# Render blueprint: the Circle website as one free web service.
+# The database is on Neon and uploads are in Backblaze B2 (Render's free
+# disk is wiped on every deploy). Steps: README.md, "Deploy for free".
+services:
+  - type: web
+    name: circle
+    runtime: python
+    plan: free
+    buildCommand: >-
+      cd backend &&
+      pip install -r requirements.txt &&
+      python manage.py collectstatic --noinput &&
+      python manage.py migrate --noinput &&
+      python manage.py ensure_admin
+    # daphne serves the pages, the API and the live chat sockets.
+    startCommand: cd backend && daphne -b 0.0.0.0 -p $PORT config.asgi:application
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.2
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      # Values you paste in the Render dashboard (sync: false = not stored here).
+      - key: DATABASE_URL
+        sync: false
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      # The only account the live site starts with (made on the first deploy).
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_EMAIL
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: MAPS_USER_AGENT
+        sync: false
+      - key: SPECIAL_EMAIL
+        sync: false
+      - key: SPECIAL_NAME
+        sync: false

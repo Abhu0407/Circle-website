@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -26,13 +27,36 @@ load_dotenv(BASE_DIR / '.env')
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-ex+^8ad(x-4bfb%+#el4*-f8g!#rq$zcl0hz%(4d7s=g9l8%1s'
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Set DEBUG=False on the live server (see the deploy section in README.md).
+DEBUG = os.environ.get('DEBUG', 'True').lower() in ('1', 'true', 'yes')
 
+# SECURITY WARNING: keep the secret key used in production secret!
+# The built-in key is only for your own computer; the live server must set
+# SECRET_KEY to a long random value.
+SECRET_KEY = os.environ.get('SECRET_KEY', '')
+if not SECRET_KEY:
+    if not DEBUG:
+        raise RuntimeError('Set the SECRET_KEY environment variable (needed when DEBUG=False).')
+    SECRET_KEY = 'django-insecure-ex+^8ad(x-4bfb%+#el4*-f8g!#rq$zcl0hz%(4d7s=g9l8%1s'
+
+# Extra hosts come from ALLOWED_HOSTS (comma separated, e.g. "circle.example.com").
+# Render's own address (RENDER_EXTERNAL_HOSTNAME) is added automatically.
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.x.x', '0.0.0.0']
+ALLOWED_HOSTS += [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()]
+if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
+    ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
+
+# Forms (sign in, posting) sent over https from these hosts are accepted.
+CSRF_TRUSTED_ORIGINS = [f'https://{h}' for h in ALLOWED_HOSTS if h not in ('localhost', '127.0.0.1', '0.0.0.0', '192.168.x.x')]
+
+if not DEBUG:
+    # Render (and most hosts) end https in front of the app and pass the
+    # original scheme in this header.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 
 # Application definition
@@ -68,6 +92,11 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+if not DEBUG:
+    # Serves the frontend and admin static files on the live server
+    # (`runserver` does it itself while DEBUG is on).
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 
 ROOT_URLCONF = 'config.urls'
 
@@ -106,11 +135,13 @@ else:
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
+# SQLite file on your computer. On the live server set DATABASE_URL to a
+# Postgres address (e.g. from Neon: postgresql://user:pass@host/db?sslmode=require).
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
+        conn_health_checks=True,
+    ),
 }
 
 
@@ -154,10 +185,48 @@ STATIC_URL = 'static/'
 # as static files, so no separate frontend build/server is needed.
 FRONTEND_DIR = BASE_DIR.parent / 'frontend'
 STATICFILES_DIRS = [FRONTEND_DIR]
+# `collectstatic` copies them here; WhiteNoise serves them from it.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # User uploads (e.g. profile pictures)
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Where uploads are kept. Without S3_BUCKET: folders on this computer
+# (MEDIA_ROOT, CHAT_FILES_ROOT). With it: a private bucket on an
+# S3-compatible service such as Backblaze B2 (media/ and chat_files/ inside
+# it), because free hosts such as Render wipe their disk on every deploy.
+# Files are opened through signed links that stop working after S3_LINK_SECONDS.
+S3_BUCKET = os.environ.get('S3_BUCKET', '')
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage'},
+}
+if S3_BUCKET:
+    from botocore.config import Config
+
+    _s3 = {
+        'bucket_name': S3_BUCKET,
+        # e.g. https://s3.us-west-004.backblazeb2.com (Backblaze shows it on the bucket)
+        'endpoint_url': os.environ['S3_ENDPOINT_URL'],
+        'region_name': os.environ.get('S3_REGION') or None,
+        'access_key': os.environ['S3_ACCESS_KEY_ID'],
+        'secret_key': os.environ['S3_SECRET_ACCESS_KEY'],
+        'signature_version': 's3v4',
+        'default_acl': None,
+        'querystring_auth': True,
+        'querystring_expire': int(os.environ.get('S3_LINK_SECONDS', 3600)),
+        # Never replace a file that has the same name; pick a new name instead.
+        'file_overwrite': False,
+        # Only add upload checksums when needed: not every S3-compatible
+        # service accepts the ones newer boto3 versions add by default.
+        'client_config': Config(
+            request_checksum_calculation='when_required',
+            response_checksum_validation='when_required',
+        ),
+    }
+    STORAGES['default'] = {'BACKEND': 'storages.backends.s3.S3Storage', 'OPTIONS': {**_s3, 'location': 'media'}}
+    STORAGES['chat'] = {'BACKEND': 'storages.backends.s3.S3Storage', 'OPTIONS': {**_s3, 'location': 'chat_files'}}
 
 # Photos, videos and files sent in chat. Kept outside MEDIA_ROOT on purpose:
 # they are private to each community and only served by apps/chat (to members).

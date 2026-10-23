@@ -7,7 +7,7 @@ or running anything inside the file.
 
 import re
 
-from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseRedirect, StreamingHttpResponse
 from django.utils.http import content_disposition_header
 
 CHUNK = 64 * 1024
@@ -33,8 +33,32 @@ def secure(response):
     return response
 
 
+def _is_remote(storage):
+    """True for cloud storage (e.g. Backblaze B2), which has no file on this server's disk."""
+    try:
+        storage.path('x')
+    except NotImplementedError:
+        return True
+    return False
+
+
 def serve_file(request, field_file, content_type, filename, inline=True):
-    """Response for a FieldFile: whole, or the byte range asked for."""
+    """Response for a FieldFile: whole, or the byte range asked for.
+
+    Files in cloud storage (e.g. Backblaze B2) are not sent through Django: the browser is
+    sent to a signed link that works for a limited time (S3_LINK_SECONDS).
+    The storage answers it with this type and file name and handles Range requests,
+    and it lives on another site, so nothing inside a file can reach ours."""
+    if _is_remote(field_file.storage):
+        url = field_file.storage.url(field_file.name, parameters={
+            'ResponseContentType': content_type,
+            'ResponseContentDisposition': content_disposition_header(not inline, filename),
+            'ResponseCacheControl': 'private, max-age=3600',
+        })
+        response = HttpResponseRedirect(url)
+        response['Cache-Control'] = 'private, no-store'
+        return response
+
     try:
         file = field_file.open('rb')
         size = field_file.size

@@ -3,7 +3,7 @@ import uuid
 from pathlib import Path
 
 from django.conf import settings
-from django.core.files.storage import FileSystemStorage
+from django.core.files.storage import FileSystemStorage, storages
 from django.db import models
 from django.urls import reverse
 
@@ -37,6 +37,9 @@ class ChatFileStorage(FileSystemStorage):
 
 
 def chat_storage():
+    # On the live server: the private cloud bucket (settings.STORAGES['chat']).
+    if 'chat' in settings.STORAGES:
+        return storages['chat']
     return ChatFileStorage()
 
 
