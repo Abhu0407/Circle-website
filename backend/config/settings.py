@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'apps.posts',
     'apps.chat',
     'apps.notifications',
+    'apps.special',
 ]
 
 MIDDLEWARE = [
@@ -62,6 +63,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Sends the SPECIAL_EMAIL person to their private page after sign in.
+    'apps.special.middleware.ShowSpecialPageMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -177,6 +180,12 @@ LOGIN_REDIRECT_URL = 'home'
 # JavaScript origins", then set GOOGLE_CLIENT_ID. The Google button is hidden
 # while it is empty.
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+
+# A private page (/special/) that only one account can see: the one with
+# this email. It opens for them right after they sign in or sign up.
+# Empty means nobody can see it. SPECIAL_NAME is the name the page greets.
+SPECIAL_EMAIL = os.environ.get('SPECIAL_EMAIL', '')
+SPECIAL_NAME = os.environ.get('SPECIAL_NAME', '')
 
 # Send only our origin (never full URLs) to other sites. Django's default,
 # 'same-origin', sends nothing, and free map/geocoding services such as
